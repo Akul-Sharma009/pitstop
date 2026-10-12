@@ -5,7 +5,7 @@ set -euo pipefail
 
 : "${VLLM_API_KEY:?Set VLLM_API_KEY (any long random string; clients send it as the API key)}"
 MODEL="${VLLM_MODEL:-Qwen/Qwen3-32B}"
-PORT="${VLLM_PORT:-8000}"
+PORT="${VLLM_PORT:-8080}"   # 8000 is taken by the mock factory systems
 IMAGE="${VLLM_IMAGE:-rocm/vllm:latest}"   # pin a tag once one works for us
 # Qwen3 defaults. For Llama 3.x use VLLM_TOOL_PARSER=llama3_json VLLM_EXTRA_ARGS="".
 TOOL_PARSER="${VLLM_TOOL_PARSER:-hermes}"
@@ -28,7 +28,8 @@ docker run -d --name pitstop-vllm \
 
 echo "Starting $MODEL on port $PORT. Follow the logs with: docker logs -f pitstop-vllm"
 
-# Optional HTTPS in front of vLLM (e.g. if Evolus only accepts https endpoints).
+# Optional HTTPS in front of vLLM when the MCP server is NOT on this machine. If it is, the compose
+# "public" profile already serves the model at https://$PUBLIC_HOST/v1: leave VLLM_PUBLIC_HOST unset.
 # VLLM_PUBLIC_HOST: a domain pointing here, or <instance-ip>.sslip.io. Needs ports 80 and 443 open.
 if [[ -n "${VLLM_PUBLIC_HOST:-}" ]]; then
   docker rm -f pitstop-vllm-https >/dev/null 2>&1 || true

@@ -8,35 +8,18 @@ Written before we had Evolus access: names of screens and fields may differ. Fix
 
 - [ ] vLLM is serving on AMD Developer Cloud and `python scripts/check_vllm.py` passes (README, step 1–2).
 - [ ] `python -m scripts.eval_agent` passes all three scenarios with the local backend. If it doesn't, fix the model or prompt first: Evolus won't make it better.
-- [ ] A server with a public IP for the MCP server (a small VM; ports 80 and 443 open).
+- [ ] Ports 80 and 443 open on the machine that hosts the MCP server (for now the GPU instance).
 
 ## 1. Put the MCP server on the internet
 
-On the server:
-
-```bash
-git clone https://github.com/akul-sharma009/pitstop.git && cd pitstop
-cp .env.example .env
-# In .env set:
-#   MCP_API_TOKEN=$(openssl rand -hex 24)    – required, this endpoint is public
-#   PUBLIC_HOST=<server-ip>.sslip.io          – or a domain pointing at the server
-docker compose --profile devmocks --profile public up -d --build
-```
-
-Check from your laptop (expect 401 without the token, anything else with it):
-
-```bash
-curl -s -o /dev/null -w '%{http_code}\n' -X POST https://$PUBLIC_HOST/mcp
-curl -s -o /dev/null -w '%{http_code}\n' -X POST https://$PUBLIC_HOST/mcp -H "Authorization: Bearer $MCP_API_TOKEN"
-```
+Follow [`setup-guide.md`](setup-guide.md) steps 3–5: on the GPU instance, `docker compose --profile devmocks --profile public up -d --build` serves the MCP server at `https://<IP>.sslip.io/mcp` (bearer `MCP_API_TOKEN`) and the model at `https://<IP>.sslip.io/v1`. On a separate server, the same command works without vLLM; then run `serve.sh` with `VLLM_PUBLIC_HOST` on the GPU instance for HTTPS on the model.
 
 `devmocks` is the temporary mock factory (`devtools/fakes.py`); drop the profile once `mocks/` exists.
-Switch demo scenario: `docker compose exec mocks python -c "import httpx; print(httpx.post('http://localhost:8000/admin/reset?scenario=in_stock').json())"`.
 
 ## 2. Workspace and model
 
 - [ ] Create the workspace at app.evolus.ai with the event code from kickoff.
-- [ ] Add our model endpoint: base URL `VLLM_BASE_URL` (if Evolus wants HTTPS, re-run `serve.sh` with `VLLM_PUBLIC_HOST=<gpu-ip>.sslip.io` and use `https://<that>/v1`), API key `VLLM_API_KEY`, model `VLLM_MODEL`.
+- [ ] Add our model endpoint: base URL `https://<IP>.sslip.io/v1`, API key `VLLM_API_KEY`, model `VLLM_MODEL`.
 - [ ] Screenshot the endpoint settings (submission: "Evolus workspace shows our AMD model endpoint").
 
 ## 3. Building blocks

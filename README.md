@@ -18,7 +18,7 @@ sensor replay (AI4I) → failure model → app ──alert──▶ agent servic
 
 | Part | Folder | Port |
 |---|---|---|
-| LLM: vLLM on AMD Developer Cloud | `deploy/vllm/` | 8000 on the GPU instance |
+| LLM: vLLM on AMD Developer Cloud | `deploy/vllm/` | 8080 on the GPU instance |
 | MCP server (factory tools for the agent / Evolus) | `mcp_server/` | 8001 |
 | Agent service (`AGENT_BACKEND=local` or `evolus`) | `agent/` | 8002 |
 | Mock factory systems | `mocks/` (in progress) | 8000 |
@@ -28,6 +28,8 @@ sensor replay (AI4I) → failure model → app ──alert──▶ agent servic
 **About the data:** AI4I 2020 is a synthetic predictive maintenance dataset modelled on a real milling machine. The live feed is a sequence we build from its rows. The machine manual and the factory systems are mock-ups we wrote.
 
 ## 1. Serve the model on AMD Developer Cloud
+
+First time? Follow the step-by-step [`docs/setup-guide.md`](docs/setup-guide.md) (Mac → GPU instance → model → public MCP server → Evolus). The short version:
 
 On a GPU instance on AMD Developer Cloud (ROCm and Docker installed):
 
@@ -44,7 +46,7 @@ Shut the instance down when you're not using it: it uses credits.
 
 ```bash
 cp .env.example .env
-# Fill in VLLM_BASE_URL=http://<gpu-instance-ip>:8000/v1, VLLM_API_KEY, and the rest as needed.
+# Fill in VLLM_BASE_URL=http://<gpu-instance-ip>:8080/v1, VLLM_API_KEY, and the rest as needed.
 # If you run the scripts outside Docker against the dev mocks, MOCKS_URL=http://localhost:8000.
 ```
 

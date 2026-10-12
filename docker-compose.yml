@@ -4,6 +4,8 @@
 #   docker compose up --build                                  MCP server + agent
 #   docker compose --profile devmocks up --build               + temporary mocks (until mocks/ exists)
 #   docker compose --profile devmocks --profile public up -d   + HTTPS on PUBLIC_HOST (for Evolus)
+#
+# Service ports are bound to localhost; on a public server only Caddy (80/443) is reachable.
 services:
   mcp:
     build: .
@@ -14,7 +16,7 @@ services:
     environment:
       MOCKS_URL: ${MOCKS_URL_DOCKER:-http://mocks:8000}
     ports:
-      - "8001:8001"
+      - "127.0.0.1:8001:8001"
 
   agent:
     build: .
@@ -26,7 +28,7 @@ services:
       MOCKS_URL: ${MOCKS_URL_DOCKER:-http://mocks:8000}
       MANUAL_DIR: /app/manual
     ports:
-      - "8002:8002"
+      - "127.0.0.1:8002:8002"
 
   # Temporary stand-in for mocks/ (devtools.fakes.FakeFactory). Remove when the real mocks service lands.
   mocks:
@@ -34,13 +36,16 @@ services:
     build: .
     command: uvicorn scripts.dev_mocks:app --host 0.0.0.0 --port 8000
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
 
   caddy:
     profiles: ["public"]
     image: caddy:2.8.4
     environment:
       PUBLIC_HOST: ${PUBLIC_HOST:-}
+      VLLM_PORT: ${VLLM_PORT:-8080}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # reach vLLM running on the host
     ports:
       - "80:80"
       - "443:443"
