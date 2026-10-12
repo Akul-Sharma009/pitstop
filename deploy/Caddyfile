@@ -1,0 +1,16 @@
+# Public HTTPS entry point (docker compose --profile public). Caddy gets the certificate itself.
+# PUBLIC_HOST: a domain pointing at this server, or <server-ip>.sslip.io if you have no domain.
+{$PUBLIC_HOST} {
+	# MCP server for the Evolus connector. Set MCP_API_TOKEN: this endpoint is on the internet.
+	handle /mcp* {
+		reverse_proxy mcp:8001
+	}
+	# Our vLLM model (OpenAI-compatible API, protected by VLLM_API_KEY), when it runs on this same machine.
+	handle /v1* {
+		reverse_proxy host.docker.internal:{$VLLM_PORT:8080}
+	}
+	# The app's screens get a route here once app/ exists.
+	handle {
+		respond "Pitstop" 200
+	}
+}
