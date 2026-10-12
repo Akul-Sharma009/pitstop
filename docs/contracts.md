@@ -97,7 +97,9 @@ The agent (and the MCP server) only use the endpoints marked **agent**. Approve/
 | POST | `/calendar/bookings/{booking_id}/approve` | **app only** | booking with `status: "approved"` |
 | POST | `/calendar/bookings/{booking_id}/reject` | **app only** | booking with `status: "rejected"` |
 
-Skill for tool-wear repairs: `cnc_tooling`.
+Skill for tool-wear repairs: `cnc_tooling`. Accept times with `Z` or an offset; treat times without a time zone as UTC (the LLM sometimes drops it).
+
+A working reference implementation of these endpoints (in-memory, used by tests and `scripts/dev_mocks.py`) is `devtools/fakes.py` → `FakeFactory`.
 
 ### Demo scenarios
 

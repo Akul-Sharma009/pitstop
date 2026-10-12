@@ -5,7 +5,7 @@ import pytest
 
 from mcp_server import server
 from mcp_server.tools import TOOL_NAMES
-from tests.fakes import PART, FakeFactory
+from devtools.fakes import PART, FakeFactory
 
 
 def test_exposes_only_drafting_tools():

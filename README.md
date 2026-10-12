@@ -45,6 +45,7 @@ Shut the instance down when you're not using it: it uses credits.
 ```bash
 cp .env.example .env
 # Fill in VLLM_BASE_URL=http://<gpu-instance-ip>:8000/v1, VLLM_API_KEY, and the rest as needed.
+# If you run the scripts outside Docker against the dev mocks, MOCKS_URL=http://localhost:8000.
 ```
 
 All keys and endpoints come from environment variables. Never commit `.env`.
@@ -58,14 +59,23 @@ set -a && . ./.env && set +a
 python scripts/check_vllm.py
 ```
 
+Then run the real model through the three demo scenarios (part out of stock, part in stock, no engineer free) against fake factory systems. It checks what the agent actually did, not just what it says:
+
+```bash
+python -m scripts.eval_agent            # add --repeat 3 to check reliability, -v to see every tool call
+```
+
 ## 3. Run
 
 ```bash
-docker compose up --build
+docker compose up --build                       # MCP server + agent
+docker compose --profile devmocks up --build    # + temporary mock factory systems (until mocks/ exists)
 ```
 
 - MCP server: `http://localhost:8001/mcp` (streamable HTTP; send `Authorization: Bearer $MCP_API_TOKEN` if set)
 - Agent service: `http://localhost:8002/docs`
+
+To expose the MCP server over HTTPS for Evolus, see [`docs/evolus-setup.md`](docs/evolus-setup.md).
 
 Send an alert to the agent (needs the model and the mock factory systems running):
 

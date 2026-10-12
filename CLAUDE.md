@@ -78,5 +78,7 @@ Needed for the submission (live URL) and for Evolus (MCP server must be publicly
 - **Docker** — every service is containerised; `docker compose up` runs the stack (vLLM runs separately on AMD Developer Cloud and is reached by URL).
 - **A README that runs** — its commands must work from a clean clone; re-test before submission.
 - **Environment variables for all keys and endpoints** (vLLM, Evolus, MCP token, etc.). `.env.example` holds placeholders; `.env` is gitignored. **Never commit secrets** — check the diff before every push.
-- Tests with `pytest`; tests must not need the GPU, Evolus or network (use fakes).
+- Tests with `pytest`; tests must not need the GPU, Evolus or network (use the fakes in `devtools/fakes.py`, which also implement the mock API contract).
+- After changing the prompt, tools or model, run `python -m scripts.eval_agent` against the real vLLM endpoint (three scenarios, checks what the agent actually did).
+- Evolus setup steps and open questions: `docs/evolus-setup.md`.
 - Public GitHub repo, MIT licence, original work.

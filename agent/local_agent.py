@@ -80,6 +80,8 @@ class LocalAgent:
                 messages.append({"role": "user", "content": "Continue with the tools, then call submit_plan."})
                 continue
 
+            # Run every other tool call in the turn before accepting a plan submitted alongside them.
+            plan = None
             for call in tool_calls:
                 name = call.function.name
                 try:
@@ -88,10 +90,15 @@ class LocalAgent:
                     arguments, result = {}, {"error": "arguments were not valid JSON"}
                 else:
                     if name == "submit_plan":
-                        return arguments, trace
-                    result = self._execute(name, arguments)
-                trace.append(ToolCall(tool=name, arguments=arguments, result=result))
+                        plan = arguments
+                        result = {"status": "received"}
+                    else:
+                        result = self._execute(name, arguments)
+                if name != "submit_plan":
+                    trace.append(ToolCall(tool=name, arguments=arguments, result=result))
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result, default=str)})
+            if plan is not None:
+                return plan, trace
 
         raise AgentError(f"No plan after {MAX_STEPS} steps.")
 

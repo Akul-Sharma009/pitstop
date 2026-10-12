@@ -7,6 +7,9 @@ set -euo pipefail
 MODEL="${VLLM_MODEL:-Qwen/Qwen3-32B}"
 PORT="${VLLM_PORT:-8000}"
 IMAGE="${VLLM_IMAGE:-rocm/vllm:latest}"   # pin a tag once one works for us
+# Qwen3 defaults. For Llama 3.x use VLLM_TOOL_PARSER=llama3_json VLLM_EXTRA_ARGS="".
+TOOL_PARSER="${VLLM_TOOL_PARSER:-hermes}"
+EXTRA_ARGS="${VLLM_EXTRA_ARGS---reasoning-parser qwen3}"
 
 docker rm -f pitstop-vllm >/dev/null 2>&1 || true
 docker run -d --name pitstop-vllm \
@@ -20,7 +23,16 @@ docker run -d --name pitstop-vllm \
     --host 0.0.0.0 --port "$PORT" \
     --api-key "$VLLM_API_KEY" \
     --max-model-len 32768 \
-    --enable-auto-tool-choice --tool-call-parser hermes \
-    --reasoning-parser qwen3
+    --enable-auto-tool-choice --tool-call-parser "$TOOL_PARSER" \
+    $EXTRA_ARGS
 
 echo "Starting $MODEL on port $PORT. Follow the logs with: docker logs -f pitstop-vllm"
+
+# Optional HTTPS in front of vLLM (e.g. if Evolus only accepts https endpoints).
+# VLLM_PUBLIC_HOST: a domain pointing here, or <instance-ip>.sslip.io. Needs ports 80 and 443 open.
+if [[ -n "${VLLM_PUBLIC_HOST:-}" ]]; then
+  docker rm -f pitstop-vllm-https >/dev/null 2>&1 || true
+  docker run -d --name pitstop-vllm-https --network host -v pitstop-caddy:/data caddy:2.8.4 \
+    caddy reverse-proxy --from "$VLLM_PUBLIC_HOST" --to "localhost:$PORT"
+  echo "HTTPS endpoint: https://$VLLM_PUBLIC_HOST/v1"
+fi

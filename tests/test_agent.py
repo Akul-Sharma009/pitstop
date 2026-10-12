@@ -6,20 +6,10 @@ from fastapi.testclient import TestClient
 from agent import api, manual, runner
 from agent.evolus_client import EvolusAgent, extract_json
 from agent.local_agent import LocalAgent
-from agent.models import Alert
-from tests.fakes import FAILURE, MANUAL, NOW, PART, FakeFactory, ScriptedLLM, thin_path_script
+from devtools.fakes import MANUAL, PART, FakeFactory, ScriptedLLM, sample_alert, thin_path_script
 
 
-def make_alert() -> Alert:
-    return Alert(
-        machine_id="M-01",
-        failure_type="tool_wear",
-        risk=0.93,
-        tool_wear_min=172,
-        remaining_cutting_min=38,
-        detected_at=NOW,
-        predicted_failure_at=FAILURE,
-    )
+make_alert = sample_alert
 
 
 def run_local(script, scenario="out_of_stock"):
