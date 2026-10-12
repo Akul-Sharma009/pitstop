@@ -7,6 +7,7 @@ model's claims and the tools become warnings; omissions are simply filled in.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from agent.models import ToolCall
@@ -34,8 +35,9 @@ def reconcile(plan: dict[str, Any], trace: list[ToolCall]) -> tuple[dict[str, An
     if order:
         _set(plan, "purchase_order_id", order.result.get("po_id"), warnings, "purchase order")
         plan["expected_delivery"] = order.result.get("expected_delivery")
-    elif plan.get("purchase_order_id"):
-        warnings.append(f"The agent reported purchase order {plan['purchase_order_id']}, but no order was drafted.")
+    else:
+        if plan.get("purchase_order_id"):
+            warnings.append(f"The agent reported purchase order {plan['purchase_order_id']}, but no order was drafted.")
         plan["purchase_order_id"] = plan["expected_delivery"] = None
 
     booking = _last(trace, "draft_booking")
@@ -51,8 +53,9 @@ def reconcile(plan: dict[str, Any], trace: list[ToolCall]) -> tuple[dict[str, An
         for key in ("booking_id", "booking_start", "booking_end", "engineer_name"):
             plan[key] = None
         plan["status"] = "escalated"
+        no_slots = _no_slots_reason(trace)
         if not plan.get("escalation_reason"):
-            plan["escalation_reason"] = _escalation_reason(trace)
+            plan["escalation_reason"] = no_slots or "No engineer booking was made."
 
     stock = next(
         (c for c in reversed(trace) if c.tool == "check_inventory" and _ok(c)
@@ -62,7 +65,39 @@ def reconcile(plan: dict[str, Any], trace: list[ToolCall]) -> tuple[dict[str, An
     if stock:
         plan["part_in_stock"] = stock.result.get("quantity_on_hand", 0) > 0
 
+    if plan["status"] == "escalated":
+        # The operator must not be told a repair is coming when nobody is booked: say it from the facts.
+        plan["operator_summary"] = _escalation_summary(plan, no_slots or plan["escalation_reason"])
+
     return plan, warnings
+
+
+def readable(value: Any) -> str:
+    """'2026-10-15T08:00:00Z' -> 'Thu 15 Oct 08:00 UTC'; anything unparseable is returned as is."""
+    try:
+        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return str(value)
+    moment = moment.astimezone(timezone.utc) if moment.tzinfo else moment
+    return f"{moment:%a} {moment.day} {moment:%b %H:%M} UTC"
+
+
+def _escalation_summary(plan: dict[str, Any], reason: str) -> str:
+    sentences = []
+    diagnosis = (plan.get("diagnosis") or "").strip()
+    if diagnosis:
+        sentences.append(diagnosis if diagnosis.endswith(".") else diagnosis + ".")
+    part = plan.get("part_number")
+    if plan.get("purchase_order_id"):
+        sentences.append(
+            f"A replacement part ({part}) has been ordered and should arrive {readable(plan.get('expected_delivery'))}; "
+            "the order is waiting for your manager's approval."
+        )
+    elif plan.get("part_in_stock") and part:
+        sentences.append(f"The replacement part ({part}) is in stock.")
+    sentences.append(f"No repair is booked yet: {reason[0].lower() + reason[1:] if reason else 'no engineer could be booked.'}")
+    sentences.append("Your manager has been asked to arrange the repair.")
+    return " ".join(sentences)
 
 
 def _engineer_name(trace: list[ToolCall], engineer_id: str | None) -> str | None:
@@ -74,12 +109,13 @@ def _engineer_name(trace: list[ToolCall], engineer_id: str | None) -> str | None
     return None
 
 
-def _escalation_reason(trace: list[ToolCall]) -> str:
+def _no_slots_reason(trace: list[ToolCall]) -> str | None:
+    """'No qualified engineer is free between ...' when the last engineer search came back empty."""
     search = next((c for c in reversed(trace) if c.tool == "find_free_engineers" and _ok(c)), None)
     if search and not search.result.get("slots"):
         args = search.arguments
         return (
-            f"No qualified engineer is free between {args.get('earliest_start')} and {args.get('latest_end')}. "
-            "A manager needs to find cover or move the repair."
+            f"No qualified engineer is free between {readable(args.get('earliest_start'))} "
+            f"and {readable(args.get('latest_end'))}."
         )
-    return "No engineer booking was made. A manager needs to schedule the repair."
+    return None

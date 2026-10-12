@@ -1,16 +1,24 @@
-"""Smoke test for the vLLM endpoint: is it up, and does it call tools?
+"""Smoke test for the model endpoint: is it up, and does it call tools?
 
-Usage: python scripts/check_vllm.py   (reads VLLM_BASE_URL, VLLM_API_KEY, VLLM_MODEL)
+Usage:
+  python scripts/check_vllm.py                   one tool-call request (reads VLLM_BASE_URL, VLLM_API_KEY, VLLM_MODEL)
+  python scripts/check_vllm.py --thinking-probe  try each known "thinking off" switch and show which one works
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
 import time
+from pathlib import Path
+from typing import Any
 
 from openai import OpenAI
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # run as a plain script from the repo
+from agent.prompts import reasoning_of  # noqa: E402
 
 TOOL = {
     "type": "function",
@@ -24,9 +32,52 @@ TOOL = {
         },
     },
 }
+QUESTION = "Is part EM-1004 in stock? Use the tool."
+
+
+def probe_variants() -> list[tuple[str, str, dict[str, Any]]]:
+    """(label, user message, extra request fields) for each way servers turn Qwen3 thinking off."""
+    return [
+        ("no switch", QUESTION, {}),
+        ("think: false (Ollama)", QUESTION, {"think": False}),
+        ('reasoning_effort: "none"', QUESTION, {"reasoning_effort": "none"}),
+        ("enable_thinking: false (vLLM)", QUESTION, {"chat_template_kwargs": {"enable_thinking": False}}),
+        ("/no_think in message", QUESTION + " /no_think", {}),
+    ]
+
+
+def ask(client: OpenAI, model: str, message: str, extra_body: dict[str, Any]) -> tuple[float, Any]:
+    start = time.time()
+    response = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": message}],
+        tools=[TOOL],
+        tool_choice="auto",
+        extra_body=extra_body,
+    )
+    return time.time() - start, response.choices[0].message
+
+
+def thinking_probe(client: OpenAI, model: str) -> int:
+    print(f"{'switch':32} {'time':>6}  {'thinking':>9}  tool call")
+    for label, message, extra in probe_variants():
+        try:
+            seconds, reply = ask(client, model, message, extra)
+        except Exception as exc:  # a server may reject a field it doesn't know
+            print(f"{label:32} {'-':>6}  {'-':>9}  error: {str(exc)[:80]}")
+            continue
+        chars = len(reasoning_of(reply))
+        thinking = f"{chars} chars" if chars else "none"
+        print(f"{label:32} {seconds:5.1f}s  {thinking:>9}  {'yes' if reply.tool_calls else 'NO'}")
+    print("\nA switch works if it shows thinking 'none' and a tool call. Tell Claude which one.")
+    return 0
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--thinking-probe", action="store_true", help="compare the thinking-off switches")
+    args = parser.parse_args()
+
     client = OpenAI(base_url=os.environ["VLLM_BASE_URL"], api_key=os.environ.get("VLLM_API_KEY", "EMPTY"))
     model = os.environ.get("VLLM_MODEL", "Qwen/Qwen3-32B")
 
@@ -35,30 +86,24 @@ def main() -> int:
     if model not in served:
         print(f"FAIL: {model} is not served; set VLLM_MODEL to one of the above.")
         return 1
+    if args.thinking_probe:
+        return thinking_probe(client, model)
 
-    # LLM_NO_THINK=true: Qwen3's /no_think switch, for servers that ignore chat_template_kwargs (e.g. Ollama).
-    no_think = " /no_think" if os.environ.get("LLM_NO_THINK", "false").lower() == "true" else ""
-    start = time.time()
-    response = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": "Is part EM-1004 in stock? Use the tool." + no_think}],
-        tools=[TOOL],
-        tool_choice="auto",
-        extra_body={"chat_template_kwargs": {"enable_thinking": False}, **({"think": False} if no_think else {})},
-    )
-    message = response.choices[0].message
-    calls = message.tool_calls or []
-    print(f"Answered in {time.time() - start:.1f}s")
-    reasoning = getattr(message, "reasoning", None) or getattr(message, "reasoning_content", None)
-    if reasoning or "<think>" in (message.content or ""):
-        print("Note: the model still thought before answering (slower). Thinking-off switch not honoured.")
+    # Same switches the agent sends (agent/local_agent.py): vLLM's, plus Ollama's with LLM_NO_THINK=true.
+    no_think = os.environ.get("LLM_NO_THINK", "false").lower() == "true"
+    extra: dict[str, Any] = {"chat_template_kwargs": {"enable_thinking": False}, **({"think": False} if no_think else {})}
+    extra.update(json.loads(os.environ.get("LLM_EXTRA_BODY") or "{}"))
+    seconds, message = ask(client, model, QUESTION + (" /no_think" if no_think else ""), extra)
+    print(f"Answered in {seconds:.1f}s")
+    if reasoning_of(message):
+        print("Note: the model still thought before answering (slower). Try --thinking-probe.")
     else:
         print("Thinking: none seen in the reply")
-    if not calls:
-        print(f"FAIL: no tool call. Reply: {response.choices[0].message.content!r}")
+    if not message.tool_calls:
+        print(f"FAIL: no tool call. Reply: {message.content!r}")
         return 1
-    args = json.loads(calls[0].function.arguments)
-    print(f"OK: called {calls[0].function.name}({args})")
+    call = message.tool_calls[0]
+    print(f"OK: called {call.function.name}({json.loads(call.function.arguments)})")
     return 0
 
 

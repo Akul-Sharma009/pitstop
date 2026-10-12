@@ -12,7 +12,7 @@ from typing import Any
 
 from agent import manual
 from agent.models import Alert, ToolCall
-from agent.prompts import SEARCH_MANUAL_SPEC, SUBMIT_PLAN_SPEC, SYSTEM_PROMPT, alert_message, strip_thinking
+from agent.prompts import SEARCH_MANUAL_SPEC, SUBMIT_PLAN_SPEC, SYSTEM_PROMPT, alert_message, reasoning_of, strip_thinking
 from mcp_server.factory import FactoryClient
 from mcp_server.tools import TOOL_SPECS, call_tool
 
@@ -42,7 +42,10 @@ class LocalAgent:
         self.no_think = os.environ.get("LLM_NO_THINK", "false").lower() == "true"
         if self.no_think:
             self.extra_body["think"] = False  # Ollama's own switch; Ollama ignores chat_template_kwargs
+        # Extra request fields, e.g. LLM_EXTRA_BODY='{"reasoning_effort": "none"}' (see check_vllm --thinking-probe).
+        self.extra_body.update(json.loads(os.environ.get("LLM_EXTRA_BODY") or "{}"))
         self.manual_parts: set[str] = set()
+        self.transcript: list[dict[str, Any]] = []  # one entry per model reply, for debugging
 
     def run(self, alert: Alert) -> tuple[dict[str, Any], list[ToolCall]]:
         """Return the submitted plan and the trace of tool calls."""
@@ -52,6 +55,7 @@ class LocalAgent:
         ]
         trace: list[ToolCall] = []
         self.manual_parts = set()
+        self.transcript = []
         nudged = False
 
         for _ in range(MAX_STEPS):
@@ -66,6 +70,11 @@ class LocalAgent:
             message = response.choices[0].message
             tool_calls = message.tool_calls or []
             content = strip_thinking(message.content)
+            self.transcript.append({
+                "text": content,
+                "reasoning": reasoning_of(message),
+                "tool_calls": [{"name": c.function.name, "arguments": c.function.arguments} for c in tool_calls],
+            })
             messages.append(
                 {
                     "role": "assistant",

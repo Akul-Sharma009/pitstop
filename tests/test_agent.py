@@ -150,8 +150,14 @@ def test_escalation_reason_filled_when_no_engineer_is_free():
     ]
     result, factory = run_local(script, scenario="no_engineer")
     assert result.status == "escalated" and not factory.bookings
-    assert "No qualified engineer is free between 2026-10-15T08:00:00+00:00" in result.escalation_reason
+    assert result.escalation_reason == "No qualified engineer is free between Thu 15 Oct 08:00 UTC and Fri 16 Oct 08:00 UTC."
     assert result.warnings == []
+    # The operator hears the facts, not a promise that someone is coming.
+    assert result.operator_summary == (
+        "Worn tool. A replacement part (EM-1004) has been ordered and should arrive Thu 15 Oct 08:00 UTC; "
+        "the order is waiting for your manager's approval. No repair is booked yet: no qualified engineer is free "
+        "between Thu 15 Oct 08:00 UTC and Fri 16 Oct 08:00 UTC. Your manager has been asked to arrange the repair."
+    )
 
 
 def test_invented_part_cannot_be_ordered():

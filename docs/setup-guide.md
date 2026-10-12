@@ -43,6 +43,10 @@ Paste `eval-ollama.txt` to Claude. Each run takes 1½–3½ minutes on a laptop.
 
 In a new Terminal window, run `. .venv/bin/activate` again and re-export the variables.
 
+If `check_vllm.py` says the model still thinks, run `python scripts/check_vllm.py --thinking-probe`. It tries every known "thinking off" switch and shows which one works; a working switch can be set with `LLM_EXTRA_BODY`, e.g. `export LLM_EXTRA_BODY='{"reasoning_effort": "none"}'`. Alternatively, `ollama pull qwen3:30b-a3b-instruct-2507-q4_K_M` (~19 GB) is a Qwen3 build without a thinking mode.
+
+With `-v`, `eval_agent` prints the model's own messages and reasoning between tool calls and saves each full run to `eval-logs/`. Send those files for failed runs.
+
 **Testing the MCP server with Evolus before AMD is ready.** A free Cloudflare tunnel gives your Mac a temporary public HTTPS address. In `.env` set `MCP_API_TOKEN=<openssl rand -hex 24>`, then:
 ```bash
 docker compose --profile devmocks up -d --build    # Docker Desktop must be running

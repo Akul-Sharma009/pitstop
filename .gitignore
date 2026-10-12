@@ -13,3 +13,6 @@ venv/
 # Data and models (download or train, never commit)
 data/*.csv
 *.joblib
+
+# Agent eval logs (local runs)
+eval-logs/

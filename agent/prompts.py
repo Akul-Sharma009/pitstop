@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from agent.models import Alert
 
@@ -12,6 +13,15 @@ _THINK = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
 def strip_thinking(text: str | None) -> str:
     """Remove Qwen3 <think>...</think> blocks that some servers (e.g. Ollama) leave in the reply."""
     return _THINK.sub("", text or "").strip()
+
+
+def reasoning_of(message: Any) -> str:
+    """The model's reasoning for one reply, wherever the server put it (field or <think> block)."""
+    for field in ("reasoning", "reasoning_content"):
+        value = getattr(message, field, None)
+        if value:
+            return str(value)
+    return "\n".join(m.strip() for m in re.findall(r"<think>(.*?)</think>", message.content or "", re.DOTALL))
 
 
 SYSTEM_PROMPT = """\
@@ -38,6 +48,8 @@ Rules:
 - Use only part numbers, repair steps and times that appear in the manual or in tool results. Never invent
   them. If the manual does not give what you need, escalate.
 - Never claim an order or booking is confirmed: it is waiting for manager approval.
+- When you escalate, the operator_summary must say plainly that no engineer is booked yet and that the
+  manager has been asked to arrange the repair.
 - The operator_summary is for a machine operator: 3-5 short plain sentences, no jargon, covering what is
   wrong, what has been done, and what happens next (including that the manager must approve).
 """

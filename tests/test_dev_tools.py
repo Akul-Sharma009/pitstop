@@ -83,3 +83,67 @@ def test_dev_mocks_serves_contract_and_resets():
     assert client.get(f"/inventory/parts/{PART}").json()["quantity_on_hand"] == 2
     assert client.post("/admin/reset", params={"scenario": "nope"}).status_code == 400
     client.post("/admin/reset", params={"scenario": "out_of_stock"})
+
+
+def test_in_stock_earliest_slot_accepts_z_suffix():
+    script = thin_path_script()
+    start, end = "2026-10-14T15:00:00Z", "2026-10-14T15:30:00Z"
+    search = {**script[4][1], "earliest_start": "2026-10-14T08:00:00Z"}
+    booking = {**script[5][1], "start": start, "end": end, "purchase_order_id": None}
+    in_stock = [script[0], script[1], ("find_free_engineers", search), ("draft_booking", booking),
+                ("submit_plan", {**script[6][1], "part_in_stock": True, "purchase_order_id": None})]
+    result, factory = run(in_stock, scenario="in_stock")
+    assert check("in_stock", result, factory) == []
+
+
+def test_eval_catches_wrong_search_window_even_when_outcome_looks_right():
+    script = thin_path_script()[:4] + [
+        ("find_free_engineers", {"skill": "cnc_tooling", "earliest_start": "2026-10-16T08:00:00Z",
+                                 "latest_end": "2026-10-16T08:00:00Z", "duration_minutes": 120}),
+        ("submit_plan", {"status": "escalated", "diagnosis": "Worn tool.", "repair_steps": [], "part_number": PART,
+                         "escalation_reason": None, "operator_summary": "x"}),
+    ]
+    result, factory = run(script, scenario="no_engineer")
+    assert result.status == "escalated"
+    problems = check("no_engineer", result, factory)
+    assert any("search starts 2026-10-16T08:00:00Z" in p for p in problems)
+    assert any("120 min" in p for p in problems)
+
+
+def test_transcript_records_text_reasoning_and_calls():
+    class ReasoningLLM(ScriptedLLM):
+        def _create(self, **kwargs):
+            response = super()._create(**kwargs)
+            response.choices[0].message.reasoning = f"step {len(self.requests)}"
+            return response
+
+    factory = FakeFactory()
+    agent = LocalAgent(llm=ReasoningLLM(["Let me check the manual.", *thin_path_script()]),
+                       factory=factory.client(), manual_sections=MANUAL, model="test")
+    runner.run(sample_alert(), agent=agent, backend="local")
+    first, second = agent.transcript[0], agent.transcript[1]
+    assert first == {"text": "Let me check the manual.", "reasoning": "step 1", "tool_calls": []}
+    assert second["tool_calls"][0]["name"] == "search_manual" and second["reasoning"] == "step 2"
+    assert agent.transcript[-1]["tool_calls"][0]["name"] == "submit_plan"
+
+
+def test_reasoning_found_in_think_block():
+    from agent.prompts import reasoning_of
+
+    assert reasoning_of(SimpleNamespace(content="<think>hmm</think>Answer")) == "hmm"
+
+
+def test_thinking_probe_covers_each_switch():
+    from scripts.check_vllm import probe_variants
+
+    extras = [extra for _, _, extra in probe_variants()]
+    assert {} in extras and {"think": False} in extras and {"reasoning_effort": "none"} in extras
+    assert {"chat_template_kwargs": {"enable_thinking": False}} in extras
+    assert any(message.endswith("/no_think") for _, message, _ in probe_variants())
+
+
+def test_llm_extra_body_is_sent(monkeypatch):
+    monkeypatch.setenv("LLM_EXTRA_BODY", '{"reasoning_effort": "none"}')
+    llm = ScriptedLLM(thin_path_script())
+    LocalAgent(llm=llm, factory=FakeFactory().client(), manual_sections=MANUAL, model="test").run(sample_alert())
+    assert llm.requests[0]["extra_body"]["reasoning_effort"] == "none"
