@@ -85,4 +85,5 @@ Needed for the submission (live URL) and for Evolus (MCP server must be publicly
 - Tests with `pytest`; tests must not need the GPU, Evolus or network (use the fakes in `devtools/fakes.py`, which also implement the mock API contract).
 - After changing the prompt, tools or model, run `python -m scripts.eval_agent` against the real vLLM endpoint (three scenarios, checks what the agent actually did).
 - Evolus setup steps and open questions: `docs/evolus-setup.md`.
+- **Branch names**: short and descriptive so a third person understands them (e.g. `agent-mcp-server`, `thin-path`, `evolus-integration`). No `claude/` prefix and no random auto-generated names.
 - Public GitHub repo, MIT licence, original work.

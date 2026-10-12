@@ -30,7 +30,7 @@ ollama pull qwen3:30b-a3b      # ~18 GB; in our runs about twice as fast as 14B 
 
 **[Mac]** Get the code and run the checks:
 ```bash
-git clone -b claude/practical-volta-yg4v5p https://github.com/akul-sharma009/pitstop.git
+git clone -b agent-mcp-server https://github.com/akul-sharma009/pitstop.git
 cd pitstop
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
@@ -89,7 +89,7 @@ docker --version && rocm-smi --showproductname | head -20
 
 **[GPU]**
 ```bash
-git clone -b claude/practical-volta-yg4v5p https://github.com/akul-sharma009/pitstop.git
+git clone -b agent-mcp-server https://github.com/akul-sharma009/pitstop.git
 cd pitstop
 cp .env.example .env
 echo "VLLM_API_KEY=$(openssl rand -hex 24)"      # copy this line
