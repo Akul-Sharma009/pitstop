@@ -4,7 +4,7 @@ An AI maintenance agent for factories. A failure model spots a CNC milling machi
 
 The agent's language model is an open model served with **vLLM on AMD Developer Cloud** (AMD Instinct MI300X, ROCm). Built for the AMD Developer Hackathon ACT III (Intelligent Industry + Evolus tracks).
 
-> Status: work in progress. The agent service and the MCP server are built and tested with fakes but not yet run against the real model; the detector, the mock factory systems and the screens are being built. Interfaces: [`docs/contracts.md`](docs/contracts.md).
+> Status (12 Oct): work in progress. The agent service and the MCP server pass all three demo scenarios (part out of stock, part in stock, no engineer free) with the chosen model, Qwen3-30B-A3B-Instruct-2507, run locally as a stand-in while AMD Developer Cloud credits are pending. Still to come: the model on AMD, the Evolus integration, and the detector, mock factory systems and screens. Interfaces: [`docs/contracts.md`](docs/contracts.md).
 
 ## Architecture
 
