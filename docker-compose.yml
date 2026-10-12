@@ -1,0 +1,25 @@
+# vLLM runs separately on AMD Developer Cloud and is reached through VLLM_BASE_URL.
+# Teammate services (mocks, app, detector) join here; see docs/contracts.md.
+services:
+  mcp:
+    build: .
+    command: python -m mcp_server.server
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      MOCKS_URL: ${MOCKS_URL_DOCKER:-http://mocks:8000}
+    ports:
+      - "8001:8001"
+
+  agent:
+    build: .
+    command: uvicorn agent.api:app --host 0.0.0.0 --port 8002
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      MOCKS_URL: ${MOCKS_URL_DOCKER:-http://mocks:8000}
+      MANUAL_DIR: /app/manual
+    ports:
+      - "8002:8002"
