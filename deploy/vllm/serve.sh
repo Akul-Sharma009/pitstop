@@ -4,12 +4,14 @@
 set -euo pipefail
 
 : "${VLLM_API_KEY:?Set VLLM_API_KEY (any long random string; clients send it as the API key)}"
-MODEL="${VLLM_MODEL:-Qwen/Qwen3-32B}"
+MODEL="${VLLM_MODEL:-Qwen/Qwen3-30B-A3B-Instruct-2507}"
 PORT="${VLLM_PORT:-8080}"   # 8000 is taken by the mock factory systems
 IMAGE="${VLLM_IMAGE:-rocm/vllm:latest}"   # pin a tag once one works for us
-# Qwen3 defaults. For Llama 3.x use VLLM_TOOL_PARSER=llama3_json VLLM_EXTRA_ARGS="".
+# Qwen3 tool calls use the hermes parser. The default model has no thinking mode, so no reasoning parser.
+# For thinking Qwen3 (e.g. Qwen/Qwen3-32B) set VLLM_EXTRA_ARGS="--reasoning-parser qwen3";
+# for Llama 3.x use VLLM_TOOL_PARSER=llama3_json.
 TOOL_PARSER="${VLLM_TOOL_PARSER:-hermes}"
-EXTRA_ARGS="${VLLM_EXTRA_ARGS---reasoning-parser qwen3}"
+EXTRA_ARGS="${VLLM_EXTRA_ARGS:-}"
 
 docker rm -f pitstop-vllm >/dev/null 2>&1 || true
 docker run -d --name pitstop-vllm \

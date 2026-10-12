@@ -36,7 +36,7 @@ On a GPU instance on AMD Developer Cloud (ROCm and Docker installed):
 ```bash
 git clone https://github.com/akul-sharma009/pitstop.git && cd pitstop
 export VLLM_API_KEY=$(openssl rand -hex 24)   # keep it; clients need it
-./deploy/vllm/serve.sh                         # Qwen/Qwen3-32B by default; set VLLM_MODEL to change
+./deploy/vllm/serve.sh                         # Qwen/Qwen3-30B-A3B-Instruct-2507 by default; set VLLM_MODEL to change
 docker logs -f pitstop-vllm                    # wait for "Application startup complete"
 ```
 

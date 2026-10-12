@@ -20,12 +20,12 @@ Stop at each ✅ checkpoint. If it doesn't match, paste the output to Claude bef
 
 AMD credits can take 3–5 business days. Meanwhile, run a smaller Qwen3 on your Mac with Ollama, so we can test and tune the agent on a real model.
 
-⚠️ **Development only.** The hackathon requires the model to run on AMD (vLLM on AMD Developer Cloud). The Mac model is never shown as the AMD part, and results from a 14B or 30B model are only a rough guide to the 32B one.
+⚠️ **Development only.** The hackathon requires the model to run on AMD (vLLM on AMD Developer Cloud). The Mac model is never shown as the AMD part, and Ollama runs a compressed (4-bit) copy of the same model we serve on AMD, so results are a close but not exact guide.
 
-**[Mac]** Install Ollama and download a model. Both fit in 32 GB of RAM; start with the first:
+**[Mac]** Install Ollama and download the model (fits in 32 GB of RAM):
 ```bash
 brew install ollama && brew services start ollama
-ollama pull qwen3:30b-a3b      # ~18 GB; in our runs about twice as fast as 14B and better with tools
+ollama pull qwen3:30b-a3b-instruct-2507-q4_K_M      # ~19 GB; no thinking mode, ~2 s per model call on an M-series Mac
 ```
 
 **[Mac]** Get the code and run the checks:
@@ -35,15 +35,15 @@ cd pitstop
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
 pytest -q                                          # ✅ all passed
-export VLLM_BASE_URL=http://localhost:11434/v1 VLLM_API_KEY=ollama VLLM_MODEL=qwen3:30b-a3b LLM_NO_THINK=true
+export VLLM_BASE_URL=http://localhost:11434/v1 VLLM_API_KEY=ollama VLLM_MODEL=qwen3:30b-a3b-instruct-2507-q4_K_M
 python scripts/check_vllm.py                       # ✅ OK: called check_inventory(...)
 python -m scripts.eval_agent --repeat 2 -v 2>&1 | tee eval-ollama.txt
 ```
-Paste `eval-ollama.txt` to Claude. Each run takes 1½–3½ minutes on a laptop. `qwen3:14b` (~9 GB) also works but was slower and less reliable in our runs (12 Oct: 14B 0/6, 30B-A3B 4/6 before the plan fixes).
+Paste `eval-ollama.txt` to Claude. Each run takes 10–30 seconds on a laptop. (12 Oct comparison: `qwen3:14b` and the thinking `qwen3:30b-a3b` were also tried; the thinking model reached 6/6 too, but at ~35 s per call instead of ~2 s.)
 
 In a new Terminal window, run `. .venv/bin/activate` again and re-export the variables.
 
-If `check_vllm.py` says the model still thinks, run `python scripts/check_vllm.py --thinking-probe`. It tries every known "thinking off" switch and shows which one works; a working switch can be set with `LLM_EXTRA_BODY`, e.g. `export LLM_EXTRA_BODY='{"reasoning_effort": "none"}'`. Alternatively, `ollama pull qwen3:30b-a3b-instruct-2507-q4_K_M` (~19 GB) is a Qwen3 build without a thinking mode.
+If you try a model that thinks before answering, `python scripts/check_vllm.py --thinking-probe` shows which "thinking off" switch it honours; set it with `LLM_EXTRA_BODY`, e.g. `export LLM_EXTRA_BODY='{"reasoning_effort": "none"}'`.
 
 With `-v`, `eval_agent` prints the model's own messages and reasoning between tool calls and saves each full run to `eval-logs/`. Send those files for failed runs.
 
@@ -123,7 +123,7 @@ set -a && . ./.env && set +a
 docker logs -f pitstop-vllm          # Ctrl+C stops following; the model keeps running
 ```
 
-The first run downloads the vLLM image (~20 GB) and the Qwen3-32B model (~65 GB).
+The first run downloads the vLLM image (~20 GB) and the model (~61 GB).
 ✅ The log ends with `Application startup complete`. A crash or `out of memory` instead → paste the last 40 lines (`docker logs pitstop-vllm 2>&1 | tail -40`).
 
 If `ufw` is active (`ufw status` says "active"), allow the ports Docker and HTTPS need:
@@ -161,7 +161,7 @@ docker compose ps                     # mcp, agent, mocks, caddy: all "running"
 export H=<IP>.sslip.io MCP_TOKEN=<MCP_API_TOKEN> VLLM_KEY=<VLLM_API_KEY>
 curl -s -o /dev/null -w '%{http_code}\n' -X POST https://$H/mcp                                   # ✅ 401
 curl -s -o /dev/null -w '%{http_code}\n' -X POST https://$H/mcp -H "Authorization: Bearer $MCP_TOKEN"  # ✅ not 401 (e.g. 400 or 406)
-curl -s https://$H/v1/models -H "Authorization: Bearer $VLLM_KEY"                                  # ✅ JSON listing Qwen/Qwen3-32B
+curl -s https://$H/v1/models -H "Authorization: Bearer $VLLM_KEY"                                  # ✅ JSON listing Qwen/Qwen3-30B-A3B-Instruct-2507
 ```
 
 If the requests hang or fail with an SSL error, ports 80/443 aren't reachable. Check the instance's firewall in the AMD Developer Cloud console and `ufw` (step 3). Then run `docker compose logs caddy | tail -30` and paste the output.
@@ -174,7 +174,7 @@ You need the **event code** from the kickoff (lablab.ai Discord or the kickoff e
 2. **Model endpoint** (wherever Evolus lets you add a model, provider or "bring your own model"):
    - Base URL: `https://<IP>.sslip.io/v1`
    - API key: your `VLLM_API_KEY`
-   - Model name: `Qwen/Qwen3-32B`
+   - Model name: `Qwen/Qwen3-30B-A3B-Instruct-2507`
 
    Screenshot this page for the submission.
 3. **Knowledge library:** upload the manual. Until your teammate's manual exists, use the short placeholder:

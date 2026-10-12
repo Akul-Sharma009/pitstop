@@ -19,7 +19,7 @@ The flow, for one CNC milling machine:
 
 Architecture:
 
-- **LLM** — an open model served with **vLLM on AMD Developer Cloud** (MI300X). This is the AMD part of the product and must be visible in the demo. Default model: Qwen3-32B with tool calling on; test multi-step tool calling on day one. The failure model is small and runs on CPU; say so clearly in the pitch.
+- **LLM** — an open model served with **vLLM on AMD Developer Cloud** (MI300X). This is the AMD part of the product and must be visible in the demo. Model: **Qwen/Qwen3-30B-A3B-Instruct-2507** (no thinking mode) with tool calling on. Chosen 12 Oct on the scenario eval: 6/6 at ~2 s per model call, vs 6/6 at ~35 s for thinking Qwen3-30B-A3B (Ollama stand-ins on a Mac). Re-run `scripts.eval_agent` on AMD to confirm; Qwen3-32B is the fallback (`VLLM_MODEL`, plus `VLLM_EXTRA_ARGS="--reasoning-parser qwen3"`). The failure model is small and runs on CPU; say so clearly in the pitch.
 - **Agent** — runs in **Evolus** (app.evolus.ai) on our own vLLM endpoint. Building blocks: knowledge library (manual), workflow (diagnose → stock → order → book), MCP connectors (inventory, supplier, calendar); consider the chat widget for the operator view. Our app drives Evolus through its REST API / OpenAI-compatible endpoint. A local agent loop calling vLLM directly is kept as a fallback (`AGENT_BACKEND=local|evolus`).
 - **Mock factory systems** — parts inventory, supplier and engineer calendar are simple REST APIs we write, exposed to the agent through one MCP server. The machine manual (4–6 pages, several failure types and similar part numbers so retrieval has to pick the right one) is also ours.
 - **Approval boundary** — the agent only drafts; our app shows drafts to the manager; approving in our app confirms them in the mock systems.
@@ -62,7 +62,7 @@ Needed for the submission (live URL) and for Evolus (MCP server must be publicly
 
 ## Status and risks
 
-- **AMD credits pending** (account validation submitted 12 Oct; AMD says up to 3–5 business days, which could be after the deadline). Chase them: devcloudrequests@amd.com, the lablab.ai Discord, and a teammate application. Until then, develop against a stand-in (Ollama + Qwen3 on a Mac, see `docs/setup-guide.md`). The stand-in is never presented as the AMD part; the demo, the video and Evolus must use vLLM on AMD.
+- **AMD credits pending** (account validation submitted 12 Oct; AMD says up to 3–5 business days, which could be after the deadline). Chase them: devcloudrequests@amd.com, the lablab.ai Discord, and a teammate application. Until then, develop against a stand-in (Ollama + the same model, 4-bit, on a Mac, see `docs/setup-guide.md`). The stand-in is never presented as the AMD part; the demo, the video and Evolus must use vLLM on AMD.
 
 ## Work split
 

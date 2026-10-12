@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from agent import runner
-from agent.local_agent import LocalAgent
+from agent.local_agent import DEFAULT_MODEL, LocalAgent
 from agent.models import AgentResult
 from agent.prompts import thinking_chars
 from agent.times import utc
@@ -140,7 +140,7 @@ def main() -> int:
                         help="print the model's messages, reasoning and tool calls; save each run to eval-logs/")
     args = parser.parse_args()
 
-    print(f"Model: {os.environ.get('VLLM_MODEL', 'Qwen/Qwen3-32B')} at {os.environ.get('VLLM_BASE_URL')}")
+    print(f"Model: {os.environ.get('VLLM_MODEL', DEFAULT_MODEL)} at {os.environ.get('VLLM_BASE_URL')}")
     passed = total = calls_total = thinking_total = 0
     seconds_total = 0.0
     for scenario in args.scenario or list(SLOTS):

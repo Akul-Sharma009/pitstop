@@ -19,6 +19,8 @@ from mcp_server.factory import FactoryClient
 from mcp_server.tools import TOOL_SPECS, call_tool
 
 MAX_STEPS = 15
+# Chosen 12 Oct: 6/6 on the scenario eval, ~14x faster per call than thinking Qwen3 (see CLAUDE.md).
+DEFAULT_MODEL = "Qwen/Qwen3-30B-A3B-Instruct-2507"
 TOOLS = [{"type": "function", "function": spec} for spec in [SEARCH_MANUAL_SPEC, *TOOL_SPECS, SUBMIT_PLAN_SPEC]]
 
 
@@ -37,7 +39,7 @@ class LocalAgent:
         self.llm = llm or vllm_client()
         self.factory = factory or FactoryClient()
         self.sections = manual_sections if manual_sections is not None else manual.load_sections()
-        self.model = model or os.environ.get("VLLM_MODEL", "Qwen/Qwen3-32B")
+        self.model = model or os.environ.get("VLLM_MODEL", DEFAULT_MODEL)
         # Qwen3 thinks before answering by default; off keeps tool loops fast. Ignored by other models.
         thinking = os.environ.get("VLLM_ENABLE_THINKING", "false").lower() == "true"
         self.extra_body = {"chat_template_kwargs": {"enable_thinking": thinking}}

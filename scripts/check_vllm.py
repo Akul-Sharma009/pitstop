@@ -18,6 +18,7 @@ from typing import Any
 from openai import OpenAI
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # run as a plain script from the repo
+from agent.local_agent import DEFAULT_MODEL  # noqa: E402
 from agent.prompts import reasoning_of, strip_thinking, thinking_chars  # noqa: E402
 
 TOOL = {
@@ -84,7 +85,7 @@ def main() -> int:
     args = parser.parse_args()
 
     client = OpenAI(base_url=os.environ["VLLM_BASE_URL"], api_key=os.environ.get("VLLM_API_KEY", "EMPTY"))
-    model = os.environ.get("VLLM_MODEL", "Qwen/Qwen3-32B")
+    model = os.environ.get("VLLM_MODEL", DEFAULT_MODEL)
 
     served = [m.id for m in client.models.list().data]
     print(f"Models served: {served}")
