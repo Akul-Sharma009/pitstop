@@ -25,8 +25,7 @@ AMD credits can take 3–5 business days. Meanwhile, run a smaller Qwen3 on your
 **[Mac]** Install Ollama and download a model. Both fit in 32 GB of RAM; start with the first:
 ```bash
 brew install ollama && brew services start ollama
-ollama pull qwen3:14b          # ~9 GB
-ollama pull qwen3:30b-a3b      # ~19 GB, often faster and better with tools; try it second
+ollama pull qwen3:30b-a3b      # ~18 GB; in our runs about twice as fast as 14B and better with tools
 ```
 
 **[Mac]** Get the code and run the checks:
@@ -36,11 +35,11 @@ cd pitstop
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
 pytest -q                                          # ✅ all passed
-export VLLM_BASE_URL=http://localhost:11434/v1 VLLM_API_KEY=ollama VLLM_MODEL=qwen3:14b LLM_NO_THINK=true
+export VLLM_BASE_URL=http://localhost:11434/v1 VLLM_API_KEY=ollama VLLM_MODEL=qwen3:30b-a3b LLM_NO_THINK=true
 python scripts/check_vllm.py                       # ✅ OK: called check_inventory(...)
 python -m scripts.eval_agent --repeat 2 -v 2>&1 | tee eval-ollama.txt
 ```
-Paste `eval-ollama.txt` to Claude. Each run takes a minute or two on a laptop. To try the other model, re-run the last two commands with `VLLM_MODEL=qwen3:30b-a3b`.
+Paste `eval-ollama.txt` to Claude. Each run takes 1½–3½ minutes on a laptop. `qwen3:14b` (~9 GB) also works but was slower and less reliable in our runs (12 Oct: 14B 0/6, 30B-A3B 4/6 before the plan fixes).
 
 In a new Terminal window, run `. .venv/bin/activate` again and re-export the variables.
 

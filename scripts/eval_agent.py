@@ -32,6 +32,11 @@ def check(scenario: str, result: AgentResult, factory: FakeFactory) -> list[str]
     if not result.operator_summary:
         problems.append("no operator summary")
     bookings = list(factory.bookings.values())
+    wrong = [o["part_number"] for o in factory.orders.values() if o["part_number"] != PART]
+    if wrong:
+        problems.append(f"ordered the wrong part: {', '.join(wrong)}")
+    if len(factory.orders) > 1 or len(bookings) > 1:
+        problems.append(f"drafted {len(factory.orders)} orders and {len(bookings)} bookings, expected at most 1 each")
 
     if scenario == "out_of_stock":
         if len(factory.orders) != 1:

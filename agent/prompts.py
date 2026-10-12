@@ -30,7 +30,9 @@ Work through these steps with your tools:
    latest_end = predicted_failure_at, duration_minutes = the repair time from the manual.
    If there is a slot, draft_booking for the earliest one, linking the purchase order if any.
    If there is no slot, do not book: escalate to the manager and say why.
-5. Finish: call submit_plan exactly once.
+5. Finish: call submit_plan exactly once. Order and booking IDs, times and the engineer are taken from
+   your tool results automatically; what matters in the plan is the status, diagnosis, repair steps,
+   part, escalation_reason (when escalating) and operator_summary.
 
 Rules:
 - Use only part numbers, repair steps and times that appear in the manual or in tool results. Never invent
@@ -61,7 +63,7 @@ SUBMIT_PLAN_SPEC = {
             "escalation_reason": {"type": ["string", "null"]},
             "operator_summary": {"type": "string"},
         },
-        "required": ["status", "diagnosis", "repair_steps", "part_number", "operator_summary"],
+        "required": ["status", "diagnosis", "repair_steps", "part_number", "escalation_reason", "operator_summary"],
     },
 }
 

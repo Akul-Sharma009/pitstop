@@ -27,6 +27,11 @@ def check(result: AgentResult, alert: Alert) -> list[str]:
             result.part_number, result, {"search_manual", "check_inventory", "get_supplier_quote"}
         ):
             warnings.append(f"Part number {result.part_number} was not found in the manual or the inventory.")
+        for call in result.trace:
+            if call.tool == "draft_purchase_order" and isinstance(call.result, dict) and "error" not in call.result:
+                ordered = call.result.get("part_number")
+                if ordered != result.part_number:
+                    warnings.append(f"An order was drafted for part {ordered}, but the plan is for {result.part_number}.")
         if result.purchase_order_id and not _seen_in_trace(result.purchase_order_id, result, {"draft_purchase_order"}):
             warnings.append(f"Purchase order {result.purchase_order_id} was not created by a tool call.")
         if result.booking_id and not _seen_in_trace(result.booking_id, result, {"draft_booking"}):

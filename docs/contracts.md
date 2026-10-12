@@ -85,7 +85,7 @@ The agent (and the MCP server) only use the endpoints marked **agent**. Approve/
 | POST | `/supplier/purchase-orders/{po_id}/approve` | **app only** | order with `status: "approved"` |
 | POST | `/supplier/purchase-orders/{po_id}/reject` | **app only** | order with `status: "rejected"` |
 
-`expected_delivery` = creation time + `lead_time_hours`.
+`expected_delivery` = creation time + `lead_time_hours`. `POST /supplier/purchase-orders` returns 404 for a part the supplier does not sell (same as the quote), so an invented part number can never be ordered.
 
 ### Engineer calendar
 

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 _WORD = re.compile(r"[a-z0-9][a-z0-9\-]*")
+_PART = re.compile(r"\b[A-Z]{1,4}-\d{2,6}[A-Z0-9-]*\b")
 
 
 @dataclass
@@ -49,3 +50,8 @@ def search(query: str, sections: list[Section], top_k: int = 3) -> list[dict[str
             scored.append((score, section))
     scored.sort(key=lambda item: item[0], reverse=True)
     return [{"source": s.source, "heading": s.heading, "text": s.text} for _, s in scored[:top_k]]
+
+
+def part_numbers(text: str) -> set[str]:
+    """Part numbers mentioned in manual text, e.g. EM-1004."""
+    return set(_PART.findall(text))

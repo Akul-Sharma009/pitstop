@@ -33,10 +33,20 @@ def test_eval_catches_booking_before_delivery():
     assert any("before the part arrives" in p for p in problems)
 
 
-def test_eval_catches_missing_escalation():
+def test_refused_booking_ends_as_escalation():
     result, factory = run(thin_path_script(), scenario="no_engineer")
     assert "BK-0001" not in factory.bookings  # the calendar refuses a slot that is not free
-    assert "expected escalated, got awaiting_approval" in check("no_engineer", result, factory)
+    assert result.status == "escalated" and result.escalation_reason
+    # The plan still claimed BK-0001; the manager is told it doesn't exist.
+    assert check("no_engineer", result, factory) == [
+        "warning: The agent reported booking BK-0001, but no booking was drafted."
+    ]
+
+
+def test_eval_catches_wrong_part_ordered():
+    result, factory = run(thin_path_script())
+    factory.orders["PO-0002"] = {"part_number": "T-789"}
+    assert any("ordered the wrong part: T-789" in p for p in check("out_of_stock", result, factory))
 
 
 def test_free_slots_respect_the_window():

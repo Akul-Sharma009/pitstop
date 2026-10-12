@@ -86,6 +86,8 @@ class FakeFactory:
             return httpx.Response(200, json={"part_number": part, "supplier": "ToolCo", "unit_price": 89.0, "currency": "EUR", "lead_time_hours": 24})
         if method == "POST" and path == "/supplier/purchase-orders":
             body = json.loads(request.content)
+            if body.get("part_number") not in self.stock:
+                return httpx.Response(404, json={"detail": "supplier does not sell this part"})
             po_id = f"PO-{len(self.orders) + 1:04d}"
             order = {**body, "po_id": po_id, "status": "pending_approval", "expected_delivery": (NOW + timedelta(hours=24)).isoformat()}
             self.orders[po_id] = order

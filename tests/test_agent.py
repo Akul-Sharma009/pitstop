@@ -42,9 +42,12 @@ def test_invented_part_number_is_flagged():
 
 
 def test_booking_after_failure_is_flagged():
+    # The calendar has a free slot on 16 Oct 12:00 in this scenario, after the predicted failure (08:00).
     script = thin_path_script()
-    plan = dict(script[-1][1], booking_end="2026-10-17T08:00:00+00:00")
-    result, _ = run_local([*script[:-1], ("submit_plan", plan)])
+    late = {"start": "2026-10-16T12:00:00+00:00", "end": "2026-10-16T12:30:00+00:00"}
+    script[5] = ("draft_booking", {**script[5][1], **late})
+    result, _ = run_local(script, scenario="no_engineer")
+    assert result.booking_end.isoformat() == late["end"]  # taken from the calendar, not the model
     assert "Repair is booked after the predicted failure." in result.warnings
 
 
@@ -56,7 +59,7 @@ def test_model_that_never_submits_becomes_failed_result():
 
 def test_bad_plan_becomes_failed_result():
     script = thin_path_script()
-    plan = dict(script[-1][1], booking_start="not a date")
+    plan = dict(script[-1][1], repair_steps=5)
     result, _ = run_local([*script[:-1], ("submit_plan", plan)])
     assert result.status == "failed"
 
@@ -115,3 +118,59 @@ def test_evolus_reply_ignores_json_inside_thinking():
             '"repair_steps": [], "part_number": "EM-1004", "operator_summary": "x", "escalation_reason": "none free"}'
     result = runner.run(make_alert(), agent=EvolusAgent(llm=ScriptedLLM([reply]), agent_id="a"), backend="evolus")
     assert result.status == "escalated"
+
+
+def test_ids_and_times_come_from_the_tools_when_the_plan_leaves_them_out():
+    script = thin_path_script()
+    keep = {"status", "diagnosis", "repair_steps", "part_number", "part_name", "operator_summary"}
+    plan = {k: v for k, v in script[-1][1].items() if k in keep}
+    result, _ = run_local([*script[:-1], ("submit_plan", plan)])
+
+    assert result.warnings == []
+    assert (result.purchase_order_id, result.booking_id, result.engineer_name) == ("PO-0001", "BK-0001", "Priya Nair")
+    assert result.booking_start.isoformat() == "2026-10-15T14:00:00+00:00"
+    assert result.part_in_stock is False
+
+
+def test_conflicting_claim_is_corrected_and_flagged():
+    script = thin_path_script()
+    plan = dict(script[-1][1], booking_id="BK-9999")
+    result, _ = run_local([*script[:-1], ("submit_plan", plan)])
+    assert result.booking_id == "BK-0001"
+    assert any("BK-9999" in w for w in result.warnings)
+
+
+def test_escalation_reason_filled_when_no_engineer_is_free():
+    script = [
+        *thin_path_script()[:4],
+        ("find_free_engineers", {"skill": "cnc_tooling", "earliest_start": "2026-10-15T08:00:00+00:00",
+                                 "latest_end": "2026-10-16T08:00:00+00:00", "duration_minutes": 30}),
+        ("submit_plan", {"status": "escalated", "diagnosis": "Worn tool.", "repair_steps": [], "part_number": PART,
+                         "operator_summary": "A manager will schedule the repair."}),
+    ]
+    result, factory = run_local(script, scenario="no_engineer")
+    assert result.status == "escalated" and not factory.bookings
+    assert "No qualified engineer is free between 2026-10-15T08:00:00+00:00" in result.escalation_reason
+    assert result.warnings == []
+
+
+def test_invented_part_cannot_be_ordered():
+    script = thin_path_script()
+    script[3] = ("draft_purchase_order", {**script[3][1], "part_number": "T-789"})
+    result, factory = run_local(script)
+    refused = [c for c in result.trace if c.tool == "draft_purchase_order"][0]
+    assert "not in the machine manual" in refused.result["error"]
+    assert not factory.orders
+
+
+def test_supplier_rejects_unknown_parts():
+    result = FakeFactory().client().draft_purchase_order("T-789", 1, "M-01", "wear")
+    assert result["error"].startswith("404")
+
+
+def test_no_think_also_sets_system_prompt_and_ollama_switch(monkeypatch):
+    monkeypatch.setenv("LLM_NO_THINK", "true")
+    llm = ScriptedLLM(thin_path_script())
+    LocalAgent(llm=llm, factory=FakeFactory().client(), manual_sections=MANUAL, model="test").run(make_alert())
+    assert llm.requests[0]["messages"][0]["content"].endswith("/no_think")
+    assert llm.requests[0]["extra_body"]["think"] is False

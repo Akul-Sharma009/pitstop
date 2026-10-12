@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from agent import guard
 from agent.models import AgentResult, Alert, ToolCall
+from agent.reconcile import reconcile
 
 log = logging.getLogger(__name__)
 
@@ -28,11 +29,14 @@ def make_agent(backend: str | None = None) -> Any:
 
 
 def finalize(plan: dict[str, Any], trace: list[ToolCall], alert: Alert, backend: str) -> AgentResult:
+    notes: list[str] = []
+    if trace:  # local backend: facts come from what the tools returned
+        plan, notes = reconcile(plan, trace)
     try:
         result = AgentResult(**{**plan, "machine_id": alert.machine_id, "trace": trace, "backend": backend})
     except ValidationError as exc:
         return failed(alert, backend, f"Agent returned an invalid plan: {exc.errors()[0]['msg']}", trace)
-    result.warnings = guard.check(result, alert)
+    result.warnings = notes + guard.check(result, alert)
     return result
 
 

@@ -40,14 +40,18 @@ class LocalAgent:
         thinking = os.environ.get("VLLM_ENABLE_THINKING", "false").lower() == "true"
         self.extra_body = {"chat_template_kwargs": {"enable_thinking": thinking}}
         self.no_think = os.environ.get("LLM_NO_THINK", "false").lower() == "true"
+        if self.no_think:
+            self.extra_body["think"] = False  # Ollama's own switch; Ollama ignores chat_template_kwargs
+        self.manual_parts: set[str] = set()
 
     def run(self, alert: Alert) -> tuple[dict[str, Any], list[ToolCall]]:
         """Return the submitted plan and the trace of tool calls."""
         messages: list[dict[str, Any]] = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": SYSTEM_PROMPT + ("\n/no_think" if self.no_think else "")},
             {"role": "user", "content": alert_message(alert, self.no_think)},
         ]
         trace: list[ToolCall] = []
+        self.manual_parts = set()
         nudged = False
 
         for _ in range(MAX_STEPS):
@@ -106,5 +110,12 @@ class LocalAgent:
 
     def _execute(self, name: str, arguments: dict[str, Any]) -> Any:
         if name == "search_manual":
-            return manual.search(str(arguments.get("query", "")), self.sections) or {"error": "no matching section"}
+            hits = manual.search(str(arguments.get("query", "")), self.sections)
+            for hit in hits:
+                self.manual_parts.update(manual.part_numbers(hit["text"]))
+            return hits or {"error": "no matching section"}
+        if name == "draft_purchase_order":
+            part = str(arguments.get("part_number", ""))
+            if part not in self.manual_parts:
+                return {"error": f"Part {part} is not in the machine manual. Search the manual and use the part number it gives."}
         return call_tool(self.factory, name, arguments)

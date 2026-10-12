@@ -44,10 +44,16 @@ def main() -> int:
         messages=[{"role": "user", "content": "Is part EM-1004 in stock? Use the tool." + no_think}],
         tools=[TOOL],
         tool_choice="auto",
-        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+        extra_body={"chat_template_kwargs": {"enable_thinking": False}, **({"think": False} if no_think else {})},
     )
-    calls = response.choices[0].message.tool_calls or []
+    message = response.choices[0].message
+    calls = message.tool_calls or []
     print(f"Answered in {time.time() - start:.1f}s")
+    reasoning = getattr(message, "reasoning", None) or getattr(message, "reasoning_content", None)
+    if reasoning or "<think>" in (message.content or ""):
+        print("Note: the model still thought before answering (slower). Thinking-off switch not honoured.")
+    else:
+        print("Thinking: none seen in the reply")
     if not calls:
         print(f"FAIL: no tool call. Reply: {response.choices[0].message.content!r}")
         return 1
