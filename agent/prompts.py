@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from agent.models import Alert
+from agent.times import hours_between, readable
 
 _THINK = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
 
@@ -47,6 +48,7 @@ Work through these steps with your tools:
 4. Schedule: find_free_engineers with the skill named in the manual (cnc_tooling for tool wear),
    earliest_start = the later of now and expected_delivery (now if the part is in stock),
    latest_end = predicted_failure_at, duration_minutes = the repair time from the manual.
+   If you ordered the part, earliest_start must be the order's expected_delivery.
    If there is a slot, draft_booking for the earliest one, linking the purchase order if any.
    If there is no slot, do not book: escalate to the manager and say why.
 5. Finish: call submit_plan exactly once. Order and booking IDs, times and the engineer are taken from
@@ -57,6 +59,8 @@ Rules:
 - Use only part numbers, repair steps and times that appear in the manual or in tool results. Never invent
   them. If the manual does not give what you need, escalate.
 - Never claim an order or booking is confirmed: it is waiting for manager approval.
+- When you mention a time, copy its *_when text from the tool result (e.g. "today (Wed 14 Oct) 15:00 UTC");
+  don't work out dates yourself.
 - When you escalate, the operator_summary must say plainly that no engineer is booked yet and that the
   manager has been asked to arrange the repair.
 - The operator_summary is for a machine operator: 3-5 short plain sentences, no jargon, covering what is
@@ -100,10 +104,17 @@ SEARCH_MANUAL_SPEC = {
 
 
 def alert_message(alert: Alert, no_think: bool = False) -> str:
-    message = (
-        "New failure warning. Plan the repair.\n"
-        f"now: {alert.detected_at.isoformat()}\n"
-        f"{alert.model_dump_json(indent=2)}"
-    )
+    lines = [
+        "New failure warning. Plan the repair.",
+        f"Now: {readable(alert.detected_at)} ({alert.detected_at.isoformat()}).",
+        f"Predicted failure: {readable(alert.predicted_failure_at)}, "
+        f"in about {hours_between(alert.detected_at, alert.predicted_failure_at):.0f} hours.",
+    ]
+    if alert.tool_wear_min is not None and alert.remaining_cutting_min is not None:
+        lines.append(
+            f"Tool wear: {alert.tool_wear_min:.0f} minutes of cutting; about {alert.remaining_cutting_min:.0f} minutes "
+            "of cutting left before the wear limit. This is machine running time, not clock time."
+        )
+    message = "\n".join(lines) + f"\n\nAlert data:\n{alert.model_dump_json(indent=2)}"
     # Qwen3's soft switch to skip thinking, for servers that ignore chat_template_kwargs (e.g. Ollama).
     return f"{message}\n/no_think" if no_think else message

@@ -92,7 +92,7 @@ The agent (and the MCP server) only use the endpoints marked **agent**. Approve/
 | Method | Path | Used by | Body / response |
 |---|---|---|---|
 | GET | `/calendar/engineers/free?skill=&earliest_start=&latest_end=&duration_minutes=` | agent | `[{"engineer_id", "name", "skills", "slot_start", "slot_end"}]` — free slots fully inside the window, may be empty |
-| POST | `/calendar/bookings` | agent | body `{"engineer_id", "machine_id", "start", "end", "task", "purchase_order_id"}` → `{"booking_id", "status": "pending_approval", ...body}`; 409 if the slot is not free |
+| POST | `/calendar/bookings` | agent | body `{"engineer_id", "machine_id", "start", "end", "task", "purchase_order_id"}` → `{"booking_id", "status": "pending_approval", ...body}`; 409 if the slot is not free, or if `purchase_order_id` is given and `start` is before that order's `expected_delivery` |
 | GET | `/calendar/bookings/{booking_id}` | app | the booking |
 | POST | `/calendar/bookings/{booking_id}/approve` | **app only** | booking with `status: "approved"` |
 | POST | `/calendar/bookings/{booking_id}/reject` | **app only** | booking with `status: "rejected"` |

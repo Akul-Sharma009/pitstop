@@ -16,7 +16,7 @@ import os
 import re
 import sys
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -24,20 +24,12 @@ from agent import runner
 from agent.local_agent import LocalAgent
 from agent.models import AgentResult
 from agent.prompts import thinking_chars
+from agent.times import utc
 from devtools.fakes import FAILURE, MANUAL, NOW, PART, SLOTS, FakeFactory, sample_alert
 
 DELIVERY = NOW + timedelta(hours=24)  # the fake supplier's lead time
 REPAIR_MINUTES = 30  # from the manual's Tool wear section
 LOG_DIR = Path("eval-logs")
-
-
-def utc(value: Any) -> datetime | None:
-    """Parse an ISO time ('Z' or offset; no zone = UTC) for comparison; None if it isn't one."""
-    try:
-        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return moment.astimezone(timezone.utc) if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
 
 
 def check(scenario: str, result: AgentResult, factory: FakeFactory) -> list[str]:

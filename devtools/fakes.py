@@ -117,6 +117,9 @@ class FakeFactory:
                 return httpx.Response(422, json={"detail": f"bad booking: {exc}"})
             if body.get("engineer_id") != "E-01" or start not in self.slots:
                 return httpx.Response(409, json={"detail": "engineer is not free at that time"})
+            order = self.orders.get(body.get("purchase_order_id") or "")
+            if order and start < _utc(datetime.fromisoformat(order["expected_delivery"])):
+                return httpx.Response(409, json={"detail": f"the part for {order['po_id']} arrives {order['expected_delivery']}"})
             booking_id = f"BK-{len(self.bookings) + 1:04d}"
             booking = {**body, "booking_id": booking_id, "status": "pending_approval"}
             self.bookings[booking_id] = booking

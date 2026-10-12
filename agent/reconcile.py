@@ -7,10 +7,10 @@ model's claims and the tools become warnings; omissions are simply filled in.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 
 from agent.models import ToolCall
+from agent.times import readable
 
 
 def _ok(call: ToolCall) -> bool:
@@ -70,16 +70,6 @@ def reconcile(plan: dict[str, Any], trace: list[ToolCall]) -> tuple[dict[str, An
         plan["operator_summary"] = _escalation_summary(plan, no_slots or plan["escalation_reason"])
 
     return plan, warnings
-
-
-def readable(value: Any) -> str:
-    """'2026-10-15T08:00:00Z' -> 'Thu 15 Oct 08:00 UTC'; anything unparseable is returned as is."""
-    try:
-        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except ValueError:
-        return str(value)
-    moment = moment.astimezone(timezone.utc) if moment.tzinfo else moment
-    return f"{moment:%a} {moment.day} {moment:%b %H:%M} UTC"
 
 
 def _escalation_summary(plan: dict[str, Any], reason: str) -> str:

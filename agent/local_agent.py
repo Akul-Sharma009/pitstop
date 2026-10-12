@@ -13,6 +13,7 @@ from typing import Any
 
 from agent import manual
 from agent.models import Alert, ToolCall
+from agent.times import readable, utc, when
 from agent.prompts import SEARCH_MANUAL_SPEC, SUBMIT_PLAN_SPEC, SYSTEM_PROMPT, alert_message, reasoning_of, strip_thinking
 from mcp_server.factory import FactoryClient
 from mcp_server.tools import TOOL_SPECS, call_tool
@@ -46,6 +47,8 @@ class LocalAgent:
         # Extra request fields, e.g. LLM_EXTRA_BODY='{"reasoning_effort": "none"}' (see check_vllm --thinking-probe).
         self.extra_body.update(json.loads(os.environ.get("LLM_EXTRA_BODY") or "{}"))
         self.manual_parts: set[str] = set()
+        self.now: Any = None
+        self.delivery: str | None = None
         self.transcript: list[dict[str, Any]] = []  # one entry per model reply, for debugging
 
     def run(self, alert: Alert) -> tuple[dict[str, Any], list[ToolCall]]:
@@ -55,6 +58,8 @@ class LocalAgent:
             {"role": "user", "content": alert_message(alert, self.no_think)},
         ]
         trace: list[ToolCall] = []
+        self.now = alert.detected_at
+        self.delivery: str | None = None  # expected_delivery of the drafted order, once there is one
         self.manual_parts = set()
         self.transcript = []
         nudged = False
@@ -130,4 +135,33 @@ class LocalAgent:
             part = str(arguments.get("part_number", ""))
             if part not in self.manual_parts:
                 return {"error": f"Part {part} is not in the machine manual. Search the manual and use the part number it gives."}
-        return call_tool(self.factory, name, arguments)
+        too_early = self._before_delivery(name, arguments)
+        if too_early:
+            return {"error": too_early}
+        result = call_tool(self.factory, name, arguments)
+        if name == "draft_purchase_order" and isinstance(result, dict) and "error" not in result:
+            self.delivery = result.get("expected_delivery")
+        return self._label_times(result)
+
+    def _before_delivery(self, name: str, arguments: dict[str, Any]) -> str | None:
+        """The repair can't start before the ordered part arrives: refuse, so the model searches again."""
+        field = {"find_free_engineers": "earliest_start", "draft_booking": "start"}.get(name)
+        if not field or not self.delivery:
+            return None
+        start, delivery = utc(arguments.get(field)), utc(self.delivery)
+        if start is None or start >= delivery:
+            return None
+        verb = "Search with earliest_start" if name == "find_free_engineers" else "Book a slot starting at or after"
+        return f"The ordered part arrives {readable(delivery)}. {verb} {delivery.isoformat()}."
+
+    def _label_times(self, result: Any) -> Any:
+        """Add 'when' wording next to times, so the model quotes 'today'/'tomorrow' instead of working it out."""
+        if not isinstance(result, dict) or "error" in result:
+            return result
+        result = dict(result)
+        for key in ("expected_delivery", "start"):
+            if key in result and when(result[key], self.now):
+                result[f"{key}_when"] = when(result[key], self.now)
+        if isinstance(result.get("slots"), list):
+            result["slots"] = [{**slot, "slot_start_when": when(slot.get("slot_start"), self.now)} for slot in result["slots"]]
+        return result

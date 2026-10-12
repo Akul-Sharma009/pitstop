@@ -23,14 +23,23 @@ def test_eval_passes_good_thin_path():
     assert check("out_of_stock", result, factory) == []
 
 
-def test_eval_catches_booking_before_delivery():
+def test_booking_before_delivery_is_refused():
     script = thin_path_script()
     early = {"start": "2026-10-14T15:00:00+00:00", "end": "2026-10-14T15:30:00+00:00"}
     script[5] = ("draft_booking", {**script[5][1], **early})
-    script[6] = ("submit_plan", {**script[6][1], "booking_start": early["start"], "booking_end": early["end"]})
     result, factory = run(script)
-    problems = check("out_of_stock", result, factory)
-    assert any("before the part arrives" in p for p in problems)
+    refused = [c for c in result.trace if c.tool == "draft_booking"][0]
+    assert "arrives Thu 15 Oct 08:00 UTC" in refused.result["error"]
+    assert not factory.bookings
+    assert any("expected 1 booking" in p for p in check("out_of_stock", result, factory))
+
+
+def test_fake_calendar_refuses_booking_before_its_order_arrives():
+    factory = FakeFactory()
+    client = factory.client()
+    client.draft_purchase_order(PART, 1, "M-01", "wear")
+    booked = client.draft_booking("E-01", "M-01", "2026-10-14T15:00:00Z", "2026-10-14T15:30:00Z", "swap", "PO-0001")
+    assert booked["error"].startswith("409") and not factory.bookings
 
 
 def test_refused_booking_ends_as_escalation():
@@ -182,3 +191,39 @@ def test_escalation_summary_keeps_part_numbers_and_full_sentences():
     base = {"part_number": PART, "purchase_order_id": None, "part_in_stock": True}
     assert _escalation_summary({**base, "diagnosis": "tool wear"}, "No engineer.").startswith("Problem found: tool wear. ")
     assert _escalation_summary({**base, "diagnosis": "EM-1004 is worn."}, "x").startswith("Problem found: EM-1004 is worn. ")
+
+
+def test_search_before_delivery_is_refused_and_the_corrected_search_passes():
+    script = thin_path_script()
+    too_early = ("find_free_engineers", {**script[4][1], "earliest_start": "2026-10-14T08:00:00Z"})
+    result, factory = run([*script[:4], too_early, *script[4:]])
+    searches = [c for c in result.trace if c.tool == "find_free_engineers"]
+    assert "Search with earliest_start 2026-10-15T08:00:00+00:00" in searches[0].result["error"]
+    assert "slots" in searches[1].result
+    assert check("out_of_stock", result, factory) == []
+
+
+def test_tool_results_carry_when_labels():
+    result, _ = run(thin_path_script())
+    by_tool = {c.tool: c.result for c in result.trace}
+    assert by_tool["draft_purchase_order"]["expected_delivery_when"] == "tomorrow (Thu 15 Oct) 08:00 UTC"
+    assert by_tool["find_free_engineers"]["slots"][0]["slot_start_when"] == "tomorrow (Thu 15 Oct) 14:00 UTC"
+    assert by_tool["draft_booking"]["start_when"] == "tomorrow (Thu 15 Oct) 14:00 UTC"
+
+
+def test_when_wording():
+    from agent.times import when
+
+    now = "2026-10-14T08:00:00+00:00"
+    assert when("2026-10-14T15:00:00Z", now) == "today (Wed 14 Oct) 15:00 UTC"
+    assert when("2026-10-16T08:00:00Z", now) == "Fri 16 Oct 08:00 UTC"
+    assert when("soon", now) is None
+
+
+def test_alert_message_states_times_plainly():
+    from agent.prompts import alert_message
+
+    text = alert_message(sample_alert())
+    assert "Now: Wed 14 Oct 08:00 UTC" in text
+    assert "Predicted failure: Fri 16 Oct 08:00 UTC, in about 48 hours." in text
+    assert "about 38 minutes of cutting left before the wear limit. This is machine running time, not clock time." in text
