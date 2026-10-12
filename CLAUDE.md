@@ -62,7 +62,30 @@ Needed for the submission (live URL) and for Evolus (MCP server must be publicly
 
 ## Status and risks
 
+Status as of **Mon 12 Oct** (update this section at the end of each day).
+
+| Part | Owner | Status |
+|---|---|---|
+| Repo, Docker, README, licence, contracts | Akul | Done, merged to `master` (PR #1) |
+| Agent service + guardrails | Akul | Done: 6/6 on `scripts.eval_agent` (Ollama stand-in, ~2 s per model call) |
+| MCP server | Akul | Done and tested over HTTP; not yet connected to Evolus |
+| Model choice | Akul | Qwen3-30B-A3B-Instruct-2507 (see Architecture) |
+| vLLM on AMD | Akul | **Blocked**: credits pending; `deploy/vllm/serve.sh` ready but untested on AMD |
+| Evolus | Akul | Workspace "Machine Whisperers" active (Developer Event, 50K credits); nothing built in it yet |
+| Failure model + replay | Teammate | Branch `failure-predictive-model`, not reviewed yet |
+| Mocks + manual, screens | Teammate | Not started as far as we know; `devtools/fakes.py` and `scripts/dev_mocks.py` stand in |
+
+Not yet proven: anything on AMD, the Evolus ↔ MCP connection (transport may need SSE), the real parts running together, and `docker compose up` on a clean machine.
+
+Risks:
 - **AMD credits pending** (account validation submitted 12 Oct; AMD says up to 3–5 business days, which could be after the deadline). Chase them: devcloudrequests@amd.com, the lablab.ai Discord, and a teammate application. Until then, develop against a stand-in (Ollama + the same model, 4-bit, on a Mac, see `docs/setup-guide.md`). The stand-in is never presented as the AMD part; the demo, the video and Evolus must use vLLM on AMD.
+- **Thin path by Wed 14 Oct** needs AMD, Evolus and the teammate's three parts. Fallback: run the whole flow on the stand-in model and fake factory systems by Wednesday, then swap in AMD and the real parts as they land.
+
+Plan for **Tue 13 Oct**:
+1. Morning (Akul): send Claude the Evolus API docs and developer guide. Needed: auth header, calling an agent / the OpenAI-compatible endpoint, running a workflow, MCP connector URL/auth/transport, and the "Your models" fields. Ask in Discord whether Fireworks AI may stand in while AMD credits are pending. Check AMD credits. Don't create the Evolus API key until wiring it up.
+2. Claude: adapt `agent/evolus_client.py` to the real API, add an SSE endpoint to the MCP server if Evolus needs it, and update `docs/evolus-setup.md` with the real screen names.
+3. Akul in Evolus (~2–3 h): MCP server public from the Mac via a Cloudflare tunnel, then MCP connector → knowledge library (placeholder manual) → agent (`SYSTEM_PROMPT`) → workflow → API key → `AGENT_BACKEND=evolus` end-to-end test.
+4. Afternoon: review `failure-predictive-model` against `docs/contracts.md`; plan the detector, mocks, manual and screens joining up for the 14 Oct thin path.
 
 ## Work split
 
