@@ -226,4 +226,5 @@ def test_alert_message_states_times_plainly():
     text = alert_message(sample_alert())
     assert "Now: Wed 14 Oct 08:00 UTC" in text
     assert "Predicted failure: Fri 16 Oct 08:00 UTC, in about 48 hours." in text
-    assert "about 38 minutes of cutting left before the wear limit. This is machine running time, not clock time." in text
+    assert ("the tool has cut for 172 minutes so far, below its wear limit of about 210 minutes, "
+            "so about 38 minutes of cutting are left. This is machine running time, not clock time.") in text

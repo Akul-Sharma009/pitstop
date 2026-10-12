@@ -111,9 +111,11 @@ def alert_message(alert: Alert, no_think: bool = False) -> str:
         f"in about {hours_between(alert.detected_at, alert.predicted_failure_at):.0f} hours.",
     ]
     if alert.tool_wear_min is not None and alert.remaining_cutting_min is not None:
+        limit = alert.tool_wear_min + alert.remaining_cutting_min
         lines.append(
-            f"Tool wear: {alert.tool_wear_min:.0f} minutes of cutting; about {alert.remaining_cutting_min:.0f} minutes "
-            "of cutting left before the wear limit. This is machine running time, not clock time."
+            f"Tool wear: the tool has cut for {alert.tool_wear_min:.0f} minutes so far, below its wear limit of about "
+            f"{limit:.0f} minutes, so about {alert.remaining_cutting_min:.0f} minutes of cutting are left. "
+            "This is machine running time, not clock time."
         )
     message = "\n".join(lines) + f"\n\nAlert data:\n{alert.model_dump_json(indent=2)}"
     # Qwen3's soft switch to skip thinking, for servers that ignore chat_template_kwargs (e.g. Ollama).
