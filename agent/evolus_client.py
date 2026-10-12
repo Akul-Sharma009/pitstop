@@ -14,7 +14,7 @@ import os
 from typing import Any
 
 from agent.models import Alert
-from agent.prompts import SUBMIT_PLAN_SPEC, alert_message
+from agent.prompts import SUBMIT_PLAN_SPEC, alert_message, strip_thinking
 
 
 class EvolusError(RuntimeError):
@@ -59,4 +59,4 @@ class EvolusAgent:
             model=self.agent_id,
             messages=[{"role": "user", "content": prompt}],
         )
-        return extract_json(response.choices[0].message.content or ""), []
+        return extract_json(strip_thinking(response.choices[0].message.content)), []

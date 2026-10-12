@@ -12,7 +12,7 @@ from typing import Any
 
 from agent import manual
 from agent.models import Alert, ToolCall
-from agent.prompts import SEARCH_MANUAL_SPEC, SUBMIT_PLAN_SPEC, SYSTEM_PROMPT, alert_message
+from agent.prompts import SEARCH_MANUAL_SPEC, SUBMIT_PLAN_SPEC, SYSTEM_PROMPT, alert_message, strip_thinking
 from mcp_server.factory import FactoryClient
 from mcp_server.tools import TOOL_SPECS, call_tool
 
@@ -39,12 +39,13 @@ class LocalAgent:
         # Qwen3 thinks before answering by default; off keeps tool loops fast. Ignored by other models.
         thinking = os.environ.get("VLLM_ENABLE_THINKING", "false").lower() == "true"
         self.extra_body = {"chat_template_kwargs": {"enable_thinking": thinking}}
+        self.no_think = os.environ.get("LLM_NO_THINK", "false").lower() == "true"
 
     def run(self, alert: Alert) -> tuple[dict[str, Any], list[ToolCall]]:
         """Return the submitted plan and the trace of tool calls."""
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": alert_message(alert)},
+            {"role": "user", "content": alert_message(alert, self.no_think)},
         ]
         trace: list[ToolCall] = []
         nudged = False
@@ -60,17 +61,18 @@ class LocalAgent:
             )
             message = response.choices[0].message
             tool_calls = message.tool_calls or []
+            content = strip_thinking(message.content)
             messages.append(
                 {
                     "role": "assistant",
-                    "content": message.content or "",
+                    "content": content,
                     "tool_calls": [
                         {"id": c.id, "type": "function", "function": {"name": c.function.name, "arguments": c.function.arguments}}
                         for c in tool_calls
                     ],
                 }
                 if tool_calls
-                else {"role": "assistant", "content": message.content or ""}
+                else {"role": "assistant", "content": content}
             )
 
             if not tool_calls:

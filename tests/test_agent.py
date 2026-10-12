@@ -95,3 +95,23 @@ def test_api_returns_agent_result(monkeypatch):
     response = client.post("/incidents", json=make_alert().model_dump(mode="json"))
     assert response.status_code == 200
     assert response.json()["status"] == "awaiting_approval"
+
+
+def test_no_think_switch_and_thinking_stripped(monkeypatch):
+    monkeypatch.setenv("LLM_NO_THINK", "true")
+    llm = ScriptedLLM(["<think>Maybe order it?</think>Let me check.", *thin_path_script()])
+    agent = LocalAgent(llm=llm, factory=FakeFactory().client(), manual_sections=MANUAL, model="test")
+    result = runner.run(make_alert(), agent=agent, backend="local")
+
+    assert result.status == "awaiting_approval"
+    first_request = llm.requests[0]["messages"]
+    assert first_request[1]["content"].endswith("/no_think")
+    replies = [m["content"] for m in llm.requests[-1]["messages"] if m["role"] == "assistant"]
+    assert "Let me check." in replies and not any("<think>" in r for r in replies)
+
+
+def test_evolus_reply_ignores_json_inside_thinking():
+    reply = '<think>{"status": "awaiting_approval"}</think>{"status": "escalated", "diagnosis": "worn", ' \
+            '"repair_steps": [], "part_number": "EM-1004", "operator_summary": "x", "escalation_reason": "none free"}'
+    result = runner.run(make_alert(), agent=EvolusAgent(llm=ScriptedLLM([reply]), agent_id="a"), backend="evolus")
+    assert result.status == "escalated"

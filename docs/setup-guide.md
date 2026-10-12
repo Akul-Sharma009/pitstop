@@ -16,6 +16,42 @@ Stop at each ✅ checkpoint. If it doesn't match, paste the output to Claude bef
 
 **Repo.** The GPU instance needs to download the code. Easiest: make `akul-sharma009/pitstop` public on GitHub now (Settings → General → Danger Zone → Change visibility). The submission must be public anyway, and no secrets are in the repo. If you'd rather keep it private for now, you'll need a GitHub personal access token for the clone in step 3.
 
+## While you wait for credits: stand-in model on your Mac (temporary)
+
+AMD credits can take 3–5 business days. Meanwhile, run a smaller Qwen3 on your Mac with Ollama, so we can test and tune the agent on a real model.
+
+⚠️ **Development only.** The hackathon requires the model to run on AMD (vLLM on AMD Developer Cloud). The Mac model is never shown as the AMD part, and results from a 14B or 30B model are only a rough guide to the 32B one.
+
+**[Mac]** Install Ollama and download a model. Both fit in 32 GB of RAM; start with the first:
+```bash
+brew install ollama && brew services start ollama
+ollama pull qwen3:14b          # ~9 GB
+ollama pull qwen3:30b-a3b      # ~19 GB, often faster and better with tools; try it second
+```
+
+**[Mac]** Get the code and run the checks:
+```bash
+git clone -b claude/practical-volta-yg4v5p https://github.com/akul-sharma009/pitstop.git
+cd pitstop
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements-dev.txt
+pytest -q                                          # ✅ all passed
+export VLLM_BASE_URL=http://localhost:11434/v1 VLLM_API_KEY=ollama VLLM_MODEL=qwen3:14b LLM_NO_THINK=true
+python scripts/check_vllm.py                       # ✅ OK: called check_inventory(...)
+python -m scripts.eval_agent --repeat 2 -v 2>&1 | tee eval-ollama.txt
+```
+Paste `eval-ollama.txt` to Claude. Each run takes a minute or two on a laptop. To try the other model, re-run the last two commands with `VLLM_MODEL=qwen3:30b-a3b`.
+
+In a new Terminal window, run `. .venv/bin/activate` again and re-export the variables.
+
+**Testing the MCP server with Evolus before AMD is ready.** A free Cloudflare tunnel gives your Mac a temporary public HTTPS address. In `.env` set `MCP_API_TOKEN=<openssl rand -hex 24>`, then:
+```bash
+docker compose --profile devmocks up -d --build    # Docker Desktop must be running
+brew install cloudflared
+cloudflared tunnel --url http://localhost:8001     # prints https://<random>.trycloudflare.com
+```
+In Evolus, the MCP connector URL is `https://<random>.trycloudflare.com/mcp` with the bearer token. The address changes every time you restart the tunnel, and it only works while your Mac is awake. For the agent service in Docker to use Ollama, set `VLLM_BASE_URL=http://host.docker.internal:11434/v1` in `.env`.
+
 ## Step 1 — SSH key (5 min)
 
 An SSH key lets your Mac log in to the GPU instance without a password.

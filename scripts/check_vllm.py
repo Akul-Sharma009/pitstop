@@ -36,10 +36,12 @@ def main() -> int:
         print(f"FAIL: {model} is not served; set VLLM_MODEL to one of the above.")
         return 1
 
+    # LLM_NO_THINK=true: Qwen3's /no_think switch, for servers that ignore chat_template_kwargs (e.g. Ollama).
+    no_think = " /no_think" if os.environ.get("LLM_NO_THINK", "false").lower() == "true" else ""
     start = time.time()
     response = client.chat.completions.create(
         model=model,
-        messages=[{"role": "user", "content": "Is part EM-1004 in stock? Use the tool."}],
+        messages=[{"role": "user", "content": "Is part EM-1004 in stock? Use the tool." + no_think}],
         tools=[TOOL],
         tool_choice="auto",
         extra_body={"chat_template_kwargs": {"enable_thinking": False}},

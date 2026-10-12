@@ -60,6 +60,10 @@ Stretch goals, only after the thin path works end to end: several engineers and 
 
 Needed for the submission (live URL) and for Evolus (MCP server must be publicly reachable). Decide the host early (small VM or free host for app + mocks + MCP server). The vLLM GPU instance costs credits: when it is off, the live demo must say the model is offline (and the demo video covers the full run).
 
+## Status and risks
+
+- **AMD credits pending** (account validation submitted 12 Oct; AMD says up to 3–5 business days, which could be after the deadline). Chase them: devcloudrequests@amd.com, the lablab.ai Discord, and a teammate application. Until then, develop against a stand-in (Ollama + Qwen3 on a Mac, see `docs/setup-guide.md`). The stand-in is never presented as the AMD part; the demo, the video and Evolus must use vLLM on AMD.
+
 ## Work split
 
 | Area | Owner |

@@ -2,7 +2,17 @@
 
 from __future__ import annotations
 
+import re
+
 from agent.models import Alert
+
+_THINK = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
+
+
+def strip_thinking(text: str | None) -> str:
+    """Remove Qwen3 <think>...</think> blocks that some servers (e.g. Ollama) leave in the reply."""
+    return _THINK.sub("", text or "").strip()
+
 
 SYSTEM_PROMPT = """\
 You are Pitstop, a maintenance planning agent in a factory. A failure model has flagged a machine that is
@@ -66,9 +76,11 @@ SEARCH_MANUAL_SPEC = {
 }
 
 
-def alert_message(alert: Alert) -> str:
-    return (
+def alert_message(alert: Alert, no_think: bool = False) -> str:
+    message = (
         "New failure warning. Plan the repair.\n"
         f"now: {alert.detected_at.isoformat()}\n"
         f"{alert.model_dump_json(indent=2)}"
     )
+    # Qwen3's soft switch to skip thinking, for servers that ignore chat_template_kwargs (e.g. Ollama).
+    return f"{message}\n/no_think" if no_think else message
