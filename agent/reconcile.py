@@ -84,9 +84,12 @@ def readable(value: Any) -> str:
 
 def _escalation_summary(plan: dict[str, Any], reason: str) -> str:
     sentences = []
-    diagnosis = (plan.get("diagnosis") or "").strip()
+    diagnosis = (plan.get("diagnosis") or "").strip().rstrip(".")
     if diagnosis:
-        sentences.append(diagnosis if diagnosis.endswith(".") else diagnosis + ".")
+        first = diagnosis.split()[0]
+        if not (first.isupper() or any(ch.isdigit() for ch in first)):  # keep "EM-1004", "CNC" as written
+            diagnosis = diagnosis[0].lower() + diagnosis[1:]
+        sentences.append(f"Problem found: {diagnosis}.")
     part = plan.get("part_number")
     if plan.get("purchase_order_id"):
         sentences.append(

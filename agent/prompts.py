@@ -15,6 +15,15 @@ def strip_thinking(text: str | None) -> str:
     return _THINK.sub("", text or "").strip()
 
 
+# Text longer than this before a tool call is the model thinking out loud, not a short status line.
+THINKING_TEXT_MIN = 200
+
+
+def thinking_chars(reasoning: str, text: str, called_tool: bool) -> tuple[int, int]:
+    """(chars in the reasoning field or <think>, chars of thinking written as normal text before a tool call)."""
+    return len(reasoning), len(text) if called_tool and len(text) > THINKING_TEXT_MIN else 0
+
+
 def reasoning_of(message: Any) -> str:
     """The model's reasoning for one reply, wherever the server put it (field or <think> block)."""
     for field in ("reasoning", "reasoning_content"):

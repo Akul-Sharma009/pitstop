@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from typing import Any
 
 from agent import manual
@@ -59,6 +60,7 @@ class LocalAgent:
         nudged = False
 
         for _ in range(MAX_STEPS):
+            started = time.monotonic()
             response = self.llm.chat.completions.create(
                 model=self.model,
                 messages=messages,
@@ -71,6 +73,7 @@ class LocalAgent:
             tool_calls = message.tool_calls or []
             content = strip_thinking(message.content)
             self.transcript.append({
+                "seconds": round(time.monotonic() - started, 1),
                 "text": content,
                 "reasoning": reasoning_of(message),
                 "tool_calls": [{"name": c.function.name, "arguments": c.function.arguments} for c in tool_calls],

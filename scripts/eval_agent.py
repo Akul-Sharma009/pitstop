@@ -23,6 +23,7 @@ from typing import Any
 from agent import runner
 from agent.local_agent import LocalAgent
 from agent.models import AgentResult
+from agent.prompts import thinking_chars
 from devtools.fakes import FAILURE, MANUAL, NOW, PART, SLOTS, FakeFactory, sample_alert
 
 DELIVERY = NOW + timedelta(hours=24)  # the fake supplier's lead time
@@ -98,6 +99,15 @@ def check_search_window(scenario: str, result: AgentResult) -> list[str]:
     return problems
 
 
+def speed(transcript: list[dict[str, Any]]) -> tuple[int, float, int]:
+    """(model calls, total seconds in the model, chars of thinking) for one run."""
+    seconds = sum(reply.get("seconds", 0) for reply in transcript)
+    thinking = sum(
+        sum(thinking_chars(reply["reasoning"], reply["text"], bool(reply["tool_calls"]))) for reply in transcript
+    )
+    return len(transcript), seconds, thinking
+
+
 def print_run(agent: LocalAgent, result: AgentResult) -> None:
     """The model's text and reasoning for each reply, followed by the tool results it got back."""
     results = iter(result.trace)
@@ -139,7 +149,8 @@ def main() -> int:
     args = parser.parse_args()
 
     print(f"Model: {os.environ.get('VLLM_MODEL', 'Qwen/Qwen3-32B')} at {os.environ.get('VLLM_BASE_URL')}")
-    passed = total = 0
+    passed = total = calls_total = thinking_total = 0
+    seconds_total = 0.0
     for scenario in args.scenario or list(SLOTS):
         for run in range(1, args.repeat + 1):
             factory = FakeFactory(scenario)
@@ -150,13 +161,17 @@ def main() -> int:
             total += 1
             passed += not problems
             label = "PASS" if not problems else "FAIL"
-            print(f"{label} {scenario} #{run}: {result.status}, {len(result.trace)} tool calls, {time.time() - start:.0f}s")
+            calls, seconds, thinking = speed(agent.transcript)
+            calls_total, seconds_total, thinking_total = calls_total + calls, seconds_total + seconds, thinking_total + thinking
+            print(f"{label} {scenario} #{run}: {result.status}, {len(result.trace)} tool calls, {time.time() - start:.0f}s"
+                  f" | {calls} model calls, avg {seconds / max(calls, 1):.1f}s/call, {thinking} chars of thinking")
             for problem in problems:
                 print(f"     - {problem}")
             if args.verbose:
                 print_run(agent, result)
                 print(f"     full log: {save_run(scenario, run, agent, result, problems)}")
-    print(f"\n{passed}/{total} passed")
+    print(f"\n{passed}/{total} passed | {calls_total} model calls, avg {seconds_total / max(calls_total, 1):.1f}s/call, "
+          f"{thinking_total} chars of thinking")
     return 0 if passed == total else 1
 
 

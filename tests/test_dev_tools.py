@@ -122,7 +122,8 @@ def test_transcript_records_text_reasoning_and_calls():
                        factory=factory.client(), manual_sections=MANUAL, model="test")
     runner.run(sample_alert(), agent=agent, backend="local")
     first, second = agent.transcript[0], agent.transcript[1]
-    assert first == {"text": "Let me check the manual.", "reasoning": "step 1", "tool_calls": []}
+    assert {k: first[k] for k in ("text", "reasoning", "tool_calls")} == {
+        "text": "Let me check the manual.", "reasoning": "step 1", "tool_calls": []}
     assert second["tool_calls"][0]["name"] == "search_manual" and second["reasoning"] == "step 2"
     assert agent.transcript[-1]["tool_calls"][0]["name"] == "submit_plan"
 
@@ -147,3 +148,37 @@ def test_llm_extra_body_is_sent(monkeypatch):
     llm = ScriptedLLM(thin_path_script())
     LocalAgent(llm=llm, factory=FakeFactory().client(), manual_sections=MANUAL, model="test").run(sample_alert())
     assert llm.requests[0]["extra_body"]["reasoning_effort"] == "none"
+
+
+def test_probe_counts_long_text_before_a_tool_call_as_thinking():
+    from scripts.check_vllm import describe_thinking
+
+    call = [SimpleNamespace(function=SimpleNamespace(name="check_inventory", arguments="{}"))]
+    rambling = "Okay, let's tackle this step by step. " * 10
+    assert describe_thinking(SimpleNamespace(content=rambling, tool_calls=call)) == f"{len(rambling.strip())} chars (text)"
+    assert describe_thinking(SimpleNamespace(content="Checking stock.", tool_calls=call)) == "none"
+    assert describe_thinking(SimpleNamespace(content="", tool_calls=call, reasoning="hmm")) == "3 chars (field)"
+
+
+def test_eval_speed_figures():
+    from scripts.eval_agent import speed
+
+    transcript = [
+        {"seconds": 2.0, "text": "x" * 300, "reasoning": "", "tool_calls": [{"name": "search_manual"}]},
+        {"seconds": 4.0, "text": "short", "reasoning": "abcd", "tool_calls": [{"name": "submit_plan"}]},
+    ]
+    assert speed(transcript) == (2, 6.0, 304)
+
+
+def test_transcript_records_seconds_per_call():
+    agent = LocalAgent(llm=ScriptedLLM(thin_path_script()), factory=FakeFactory().client(), manual_sections=MANUAL, model="t")
+    agent.run(sample_alert())
+    assert all(isinstance(reply["seconds"], float) for reply in agent.transcript)
+
+
+def test_escalation_summary_keeps_part_numbers_and_full_sentences():
+    from agent.reconcile import _escalation_summary
+
+    base = {"part_number": PART, "purchase_order_id": None, "part_in_stock": True}
+    assert _escalation_summary({**base, "diagnosis": "tool wear"}, "No engineer.").startswith("Problem found: tool wear. ")
+    assert _escalation_summary({**base, "diagnosis": "EM-1004 is worn."}, "x").startswith("Problem found: EM-1004 is worn. ")

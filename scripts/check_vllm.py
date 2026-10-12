@@ -18,7 +18,7 @@ from typing import Any
 from openai import OpenAI
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # run as a plain script from the repo
-from agent.prompts import reasoning_of  # noqa: E402
+from agent.prompts import reasoning_of, strip_thinking, thinking_chars  # noqa: E402
 
 TOOL = {
     "type": "function",
@@ -58,18 +58,23 @@ def ask(client: OpenAI, model: str, message: str, extra_body: dict[str, Any]) ->
     return time.time() - start, response.choices[0].message
 
 
+def describe_thinking(reply: Any) -> str:
+    """'none', or where the thinking went: the reasoning field, or normal text before the tool call."""
+    field, text = thinking_chars(reasoning_of(reply), strip_thinking(reply.content), bool(reply.tool_calls))
+    parts = [f"{field} chars (field)"] * bool(field) + [f"{text} chars (text)"] * bool(text)
+    return ", ".join(parts) or "none"
+
+
 def thinking_probe(client: OpenAI, model: str) -> int:
-    print(f"{'switch':32} {'time':>6}  {'thinking':>9}  tool call")
+    print(f"{'switch':32} {'time':>6}  {'thinking':>18}  tool call")
     for label, message, extra in probe_variants():
         try:
             seconds, reply = ask(client, model, message, extra)
         except Exception as exc:  # a server may reject a field it doesn't know
-            print(f"{label:32} {'-':>6}  {'-':>9}  error: {str(exc)[:80]}")
+            print(f"{label:32} {'-':>6}  {'-':>18}  error: {str(exc)[:80]}")
             continue
-        chars = len(reasoning_of(reply))
-        thinking = f"{chars} chars" if chars else "none"
-        print(f"{label:32} {seconds:5.1f}s  {thinking:>9}  {'yes' if reply.tool_calls else 'NO'}")
-    print("\nA switch works if it shows thinking 'none' and a tool call. Tell Claude which one.")
+        print(f"{label:32} {seconds:5.1f}s  {describe_thinking(reply):>18}  {'yes' if reply.tool_calls else 'NO'}")
+    print("\nA switch works if it shows thinking 'none' (neither field nor text) and a tool call.")
     return 0
 
 
@@ -95,10 +100,11 @@ def main() -> int:
     extra.update(json.loads(os.environ.get("LLM_EXTRA_BODY") or "{}"))
     seconds, message = ask(client, model, QUESTION + (" /no_think" if no_think else ""), extra)
     print(f"Answered in {seconds:.1f}s")
-    if reasoning_of(message):
-        print("Note: the model still thought before answering (slower). Try --thinking-probe.")
-    else:
+    thinking = describe_thinking(message)
+    if thinking == "none":
         print("Thinking: none seen in the reply")
+    else:
+        print(f"Note: the model still thought before answering ({thinking}; slower). Try --thinking-probe.")
     if not message.tool_calls:
         print(f"FAIL: no tool call. Reply: {message.content!r}")
         return 1
