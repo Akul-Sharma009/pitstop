@@ -88,10 +88,10 @@ To expose the MCP server over HTTPS for Evolus, see [`docs/evolus-setup.md`](doc
 Replay the machine and let the detector send its alert to the agent (needs the model; first run downloads AI4I from UCI into `data/`):
 
 ```bash
-docker compose run --rm detector --scenario out_of_stock   # or in_stock, no_engineer; --dry-run prints the alert only
+docker compose run --build --rm detector --scenario out_of_stock   # or in_stock, no_engineer; --dry-run prints the alert only
 ```
 
-`--scenario` resets the mock factory first: engineer slots are set relative to that moment.
+`--scenario` resets the mock factory first: engineer slots are set relative to that moment. `--build` matters: `docker compose up --build` doesn't rebuild the detector, which only runs on demand.
 
 Or send an alert by hand:
 

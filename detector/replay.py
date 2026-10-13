@@ -108,9 +108,16 @@ def main(argv: list[str] | None = None) -> int:
 
     recent: list[dict[str, Any]] = []
     remaining: float | None = None
+    limit = None  # the last wear limit, shown when the latest readings give none (they never alert)
     for recent, remaining in watch(trained.model, sequence(trained.test_rows, step), horizon, threshold, window):
         row = recent[-1]
-        left = "no estimate yet" if remaining is None else f"about {remaining:.0f} cutting min to the wear limit"
+        if remaining is not None:
+            limit = row["Tool wear [min]"] + remaining
+            left = f"about {remaining:.0f} cutting min to the wear limit"
+        elif limit is not None:
+            left = f"about {max(limit - row['Tool wear [min]'], 0):.0f} cutting min (previous estimate)"
+        else:
+            left = "no estimate yet"
         print(f"{MACHINE} tool wear {row['Tool wear [min]']:>5.0f} min | torque {row['Torque [Nm]']:>4.1f} Nm | {left}")
         time.sleep(args.interval)
     if remaining is None or remaining > horizon:

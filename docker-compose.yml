@@ -2,7 +2,7 @@
 # Teammate services (mocks, app, detector) join here; see docs/contracts.md.
 #
 #   docker compose up --build                       mock factory + MCP server + agent
-#   docker compose run --rm detector --scenario out_of_stock   replay M-01 and send the alert to the agent
+#   docker compose run --build --rm detector --scenario out_of_stock   replay M-01 and send the alert to the agent
 #   docker compose --profile public up -d           + HTTPS on PUBLIC_HOST (for Evolus)
 #
 # Service ports are bound to localhost; on a public server only Caddy (80/443) is reachable.
@@ -36,7 +36,7 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
 
-  # One-shot: docker compose run --rm detector [--scenario in_stock] [--dry-run]
+  # One-shot: docker compose run --build --rm detector [--scenario in_stock] [--dry-run]
   detector:
     profiles: ["replay"]
     build: .
