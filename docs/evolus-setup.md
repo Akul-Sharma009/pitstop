@@ -12,9 +12,9 @@ Written before we had Evolus access: names of screens and fields may differ. Fix
 
 ## 1. Put the MCP server on the internet
 
-Follow [`setup-guide.md`](setup-guide.md) steps 3–5: on the GPU instance, `docker compose --profile devmocks --profile public up -d --build` serves the MCP server at `https://<IP>.sslip.io/mcp` (bearer `MCP_API_TOKEN`) and the model at `https://<IP>.sslip.io/v1`. On a separate server, the same command works without vLLM; then run `serve.sh` with `VLLM_PUBLIC_HOST` on the GPU instance for HTTPS on the model.
+Follow [`setup-guide.md`](setup-guide.md) steps 3–5: on the GPU instance, `docker compose --profile public up -d --build` serves the MCP server at `https://<IP>.sslip.io/mcp` (bearer `MCP_API_TOKEN`) and the model at `https://<IP>.sslip.io/v1`. On a separate server, the same command works without vLLM; then run `serve.sh` with `VLLM_PUBLIC_HOST` on the GPU instance for HTTPS on the model.
 
-`devmocks` is the temporary mock factory (`devtools/fakes.py`); drop the profile once `mocks/` exists.
+The mock factory (`mocks/`, seed data `mocks/seed.json`) starts with it. Reset the demo scenario before a run: `curl -X POST 'localhost:8000/admin/reset?scenario=out_of_stock'`.
 
 ## 2. Workspace and model
 

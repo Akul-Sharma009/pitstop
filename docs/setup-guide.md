@@ -49,7 +49,7 @@ With `-v`, `eval_agent` prints the model's own messages and reasoning between to
 
 **Testing the MCP server with Evolus before AMD is ready.** A free Cloudflare tunnel gives your Mac a temporary public HTTPS address. In `.env` set `MCP_API_TOKEN=<openssl rand -hex 24>`, then:
 ```bash
-docker compose --profile devmocks up -d --build    # Docker Desktop must be running
+docker compose up -d --build                       # Docker Desktop must be running
 brew install cloudflared
 cloudflared tunnel --url http://localhost:8001     # prints https://<random>.trycloudflare.com
 ```
@@ -152,7 +152,7 @@ docker compose run --rm --no-deps agent python -m scripts.eval_agent --repeat 3 
 
 **[GPU]**
 ```bash
-docker compose --profile devmocks --profile public up -d --build
+docker compose --profile public up -d --build
 docker compose ps                     # mcp, agent, mocks, caddy: all "running"
 ```
 
@@ -237,4 +237,4 @@ Then in the console, **destroy** the instance if you won't use it for a while. O
 | Model logs | `docker logs -f pitstop-vllm` |
 | Service logs | `docker compose logs -f mcp` (or `agent`, `mocks`, `caddy`) |
 | Switch demo scenario | `docker compose exec mocks python -c "import httpx; print(httpx.post('http://localhost:8000/admin/reset?scenario=in_stock').json())"` (`out_of_stock`, `in_stock`, `no_engineer`) |
-| Update code after a push | `git pull && docker compose --profile devmocks --profile public up -d --build` |
+| Update code after a push | `git pull && docker compose --profile public up -d --build` |

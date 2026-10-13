@@ -72,8 +72,9 @@ Status as of **Mon 12 Oct** (update this section at the end of each day).
 | Model choice | Akul | Qwen3-30B-A3B-Instruct-2507 (see Architecture) |
 | vLLM on AMD | Akul | **Blocked**: credits pending; `deploy/vllm/serve.sh` ready but untested on AMD |
 | Evolus | Akul | Workspace "Machine Whisperers" active (Developer Event, 50K credits); nothing built in it yet |
-| Failure model + replay | Teammate | Branch `failure-predictive-model`, not reviewed yet |
-| Mocks + manual, screens | Teammate | Not started as far as we know; `devtools/fakes.py` and `scripts/dev_mocks.py` stand in |
+| Failure model + replay | Teammate, Akul | 13 Oct: teammate's model (branches `failure-predictive-model`, `sensor_script`) rebuilt as `detector/` on branch `detector-mocks`: one machine, Alert contract, remaining cutting time from the model; needs a run on the real AI4I data |
+| Mock factory systems | Teammate, Akul | 13 Oct: `mocks/` service on branch `detector-mocks` (seed `mocks/seed.json`, using the teammate's fictional suppliers) |
+| Manual, screens | Teammate | Not started; the teammate's manual JSON is too short (see the 13 Oct review); `devtools/fakes.py` stands in for the manual |
 
 Not yet proven: anything on AMD, the Evolus ↔ MCP connection (transport may need SSE), the real parts running together, and `docker compose up` on a clean machine.
 
@@ -95,8 +96,9 @@ Plan for **Tue 13 Oct**:
 | Agent service, local + Evolus backends (`agent/`) | Akul |
 | MCP server (`mcp_server/`) and Evolus workspace | Akul |
 | Repo, Docker, README | Akul |
-| Failure model + sensor replay (`detector/`) | Teammate |
-| Mock inventory / supplier / calendar (`mocks/`), machine manual (`manual/`) | Teammate (Akul supports) |
+| Failure model + sensor replay (`detector/`) | Teammate (model), Akul (replay, Alert) |
+| Mock inventory / supplier / calendar (`mocks/`) | Akul (seed data: teammate) |
+| Machine manual (`manual/`) | Teammate |
 | Approval screen + operator summary (`app/`) | Teammate |
 
 ## Conventions
