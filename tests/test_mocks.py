@@ -92,3 +92,27 @@ def test_approved_booking_takes_the_slot():
 
 def test_agent_client_has_no_approval():
     assert not [name for name in dir(FactoryClient) if "approve" in name or "reject" in name]
+
+
+def test_call_log_records_agent_calls_in_tool_shape():
+    factory, client = demo("out_of_stock")
+    http = httpx.Client(base_url="http://mocks", transport=httpx.MockTransport(factory.handle))
+    client.check_inventory("T-789")
+    client.find_free_engineers("cnc_tooling", START.isoformat(), (START + timedelta(days=3)).isoformat(), 30)
+    http.post("/admin/reset", params={"scenario": "in_stock"})  # not an agent call; clears the log
+    client.check_inventory("EM-1004")
+    log = http.get("/admin/calls", params={"after": 1}).json()
+    assert log["last"] == 3
+    assert [(c["seq"], c["tool"]) for c in log["calls"]] == [(3, "check_inventory")]
+    assert log["calls"][0]["result"]["quantity_on_hand"] == 2
+    assert factory.calls == log["calls"]
+
+
+def test_call_log_keeps_errors_and_slot_shape():
+    factory, client = demo("out_of_stock")
+    http = httpx.Client(base_url="http://mocks", transport=httpx.MockTransport(factory.handle))
+    client.check_inventory("T-789")
+    client.find_free_engineers("cnc_tooling", START.isoformat(), (START + timedelta(days=3)).isoformat(), 30)
+    first, search = http.get("/admin/calls").json()["calls"]
+    assert first["result"] == {"error": "404: unknown part"}
+    assert search["arguments"]["duration_minutes"] == 30 and len(search["result"]["slots"]) == 2

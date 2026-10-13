@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from types import SimpleNamespace
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -78,7 +81,7 @@ def test_manual_loads_sections_from_markdown(tmp_path):
 def test_evolus_backend_parses_json_reply():
     reply = 'Here is the plan:\n```json\n{"status": "escalated", "diagnosis": "worn", "repair_steps": [], ' \
             '"part_number": "EM-1004", "operator_summary": "x", "escalation_reason": "no engineer"}\n```'
-    agent = EvolusAgent(llm=ScriptedLLM([reply]), agent_id="agent-1")
+    agent = EvolusAgent(llm=ScriptedLLM([reply]), agent_id="app:agent-1", factory_log=factory_log(FakeFactory()))
     result = runner.run(make_alert(), agent=agent, backend="evolus")
     assert result.status == "escalated"
     assert result.backend == "evolus"
@@ -116,7 +119,8 @@ def test_no_think_switch_and_thinking_stripped(monkeypatch):
 def test_evolus_reply_ignores_json_inside_thinking():
     reply = '<think>{"status": "awaiting_approval"}</think>{"status": "escalated", "diagnosis": "worn", ' \
             '"repair_steps": [], "part_number": "EM-1004", "operator_summary": "x", "escalation_reason": "none free"}'
-    result = runner.run(make_alert(), agent=EvolusAgent(llm=ScriptedLLM([reply]), agent_id="a"), backend="evolus")
+    agent = EvolusAgent(llm=ScriptedLLM([reply]), agent_id="a", factory_log=factory_log(FakeFactory()))
+    result = runner.run(make_alert(), agent=agent, backend="evolus")
     assert result.status == "escalated"
 
 
@@ -214,3 +218,36 @@ def test_escalation_reason_comes_from_the_empty_search():
                       arguments={"earliest_start": "2026-10-15T08:00:00Z", "latest_end": "2026-10-16T08:00:00Z"})
     plan, _ = reconcile({"escalation_reason": "after delivery on tomorrow (Thu 15 Oct) 08:00 UTC"}, [search])
     assert plan["escalation_reason"] == "No qualified engineer is free between Thu 15 Oct 08:00 UTC and Fri 16 Oct 08:00 UTC."
+
+
+def factory_log(factory):
+    import httpx
+
+    from agent.factory_log import FactoryLog
+
+    return FactoryLog(base_url="http://mocks", transport=httpx.MockTransport(factory.handle))
+
+
+def test_evolus_run_is_traced_and_checked_from_the_factory_log():
+    """Evolus calls our tools itself and replies with text: the trace comes from the mock factory."""
+    factory = FakeFactory()
+    factory.client().check_inventory(PART)  # an earlier run's call must not leak into this trace
+    script = thin_path_script()
+    plan = {k: v for k, v in script[-1][1].items() if k not in {"purchase_order_id", "booking_id", "expected_delivery"}}
+
+    class EvolusLike(ScriptedLLM):
+        def _create(self, **kwargs):
+            self.requests.append(kwargs)
+            client = factory.client()
+            for name, arguments in script[1:-1]:  # the knowledge library search happens inside Evolus
+                getattr(client, name)(**arguments)
+            message = SimpleNamespace(content="Done.\n" + json.dumps(plan), tool_calls=None)
+            return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+    llm = EvolusLike([])
+    agent = EvolusAgent(llm=llm, agent_id="app:agent", factory_log=factory_log(factory))
+    result = runner.run(sample_alert(), agent=agent, backend="evolus")
+    assert llm.requests[0]["model"] == "app:agent"
+    assert [c.tool for c in result.trace] == [name for name, _ in script[1:-1]]
+    assert result.purchase_order_id == "PO-0001" and result.booking_id == "BK-0001"
+    assert result.status == "awaiting_approval" and result.warnings == []

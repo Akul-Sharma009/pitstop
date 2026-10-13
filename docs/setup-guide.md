@@ -47,13 +47,13 @@ If you try a model that thinks before answering, `python scripts/check_vllm.py -
 
 With `-v`, `eval_agent` prints the model's own messages and reasoning between tool calls and saves each full run to `eval-logs/`. Send those files for failed runs.
 
-**Testing the MCP server with Evolus before AMD is ready.** A free Cloudflare tunnel gives your Mac a temporary public HTTPS address. In `.env` set `MCP_API_TOKEN=<openssl rand -hex 24>`, then:
+**Testing with Evolus before AMD is ready.** A free Cloudflare tunnel gives your Mac a temporary public HTTPS address for both the model (Ollama) and the MCP server. In `.env` set `VLLM_API_KEY` and `MCP_API_TOKEN` to `openssl rand -hex 24` values, then:
 ```bash
-docker compose up -d --build                       # Docker Desktop must be running
+docker compose --profile tunnel up -d --build      # Docker Desktop must be running
 brew install cloudflared
-cloudflared tunnel --url http://localhost:8001     # prints https://<random>.trycloudflare.com
+cloudflared tunnel --url http://localhost:8088     # prints https://<random>.trycloudflare.com
 ```
-In Evolus, the MCP connector URL is `https://<random>.trycloudflare.com/mcp` with the bearer token. The address changes every time you restart the tunnel, and it only works while your Mac is awake. For the agent service in Docker to use Ollama, set `VLLM_BASE_URL=http://host.docker.internal:11434/v1` in `.env`.
+In Evolus, the model's base URL is `https://<random>.trycloudflare.com/v1` (API key `VLLM_API_KEY`) and the MCP URL is `https://<random>.trycloudflare.com/mcp` (bearer `MCP_API_TOKEN`). See `docs/evolus-setup.md`. The address changes every time you restart the tunnel, and it only works while your Mac is awake. For the agent service in Docker to use Ollama, set `VLLM_BASE_URL=http://host.docker.internal:11434/v1` in `.env`.
 
 ## Step 1 — SSH key (5 min)
 

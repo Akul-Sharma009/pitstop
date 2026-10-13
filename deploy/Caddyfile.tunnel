@@ -1,0 +1,22 @@
+# One local entry point for a Cloudflare quick tunnel while the model runs on the Ollama stand-in
+# (docker compose --profile tunnel up -d, then: cloudflared tunnel --url http://localhost:8088).
+# Development only: the demo, the video and Evolus screenshots use vLLM on AMD.
+:8088 {
+	# The model, OpenAI-compatible. Ollama has no API key of its own, so Caddy checks VLLM_API_KEY.
+	handle /v1* {
+		@key_unset expression `"{$VLLM_API_KEY}" == ""`
+		respond @key_unset "Set VLLM_API_KEY in .env first" 503
+		@no_key not header Authorization "Bearer {$VLLM_API_KEY}"
+		respond @no_key "Unauthorized" 401
+		reverse_proxy {$MODEL_UPSTREAM:host.docker.internal:11434} {
+			header_up Host localhost   # Ollama only answers requests addressed to localhost
+		}
+	}
+	# MCP server for the Evolus connector; it checks MCP_API_TOKEN itself.
+	handle /mcp* {
+		reverse_proxy mcp:8001
+	}
+	handle {
+		respond "Pitstop" 200
+	}
+}

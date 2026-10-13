@@ -1,10 +1,12 @@
-"""Evolus agent backend: our app drives the Evolus agent through its OpenAI-compatible endpoint.
+"""Evolus agent backend: our app drives the Evolus agent through its OpenAI-compatible agent chat.
 
-The Evolus agent runs on our vLLM model on AMD, has the manual in a knowledge library and the factory
-tools through the MCP connector (mcp_server). Its instructions are agent.prompts.SYSTEM_PROMPT.
+API (evolus.ai/en/developers): base URL https://api.evolus.ai/v1, header Authorization: Bearer <application
+API key>, model "<applicationId>:<agentId>" (GET /v1/models lists them). Messages are text; model settings
+come from the agent. Each request without X-Conversation-Id starts a new conversation: one per alert.
 
-TODO(evolus day): confirm the endpoint path, auth header and how an agent is addressed (we assume
-model = EVOLUS_AGENT_ID) against the Evolus developer docs, and whether the reply exposes tool calls.
+The Evolus agent runs on our model, has the manual in a knowledge library and reaches the factory tools
+through our MCP server. Its instructions are agent.prompts.SYSTEM_PROMPT. The reply is text only, so the
+trace comes from the mock factory's call log (agent/factory_log.py) and is checked like a local run.
 """
 
 from __future__ import annotations
@@ -13,8 +15,12 @@ import json
 import os
 from typing import Any
 
+from agent.factory_log import FactoryLog
 from agent.models import Alert
 from agent.prompts import SUBMIT_PLAN_SPEC, alert_message, strip_thinking
+
+
+EVOLUS_BASE_URL = "https://api.evolus.ai/v1"
 
 
 class EvolusError(RuntimeError):
@@ -24,7 +30,7 @@ class EvolusError(RuntimeError):
 def evolus_client() -> Any:
     from openai import OpenAI
 
-    return OpenAI(base_url=os.environ["EVOLUS_BASE_URL"], api_key=os.environ["EVOLUS_API_KEY"])
+    return OpenAI(base_url=os.environ.get("EVOLUS_BASE_URL") or EVOLUS_BASE_URL, api_key=os.environ["EVOLUS_API_KEY"])
 
 
 def extract_json(text: str) -> dict[str, Any]:
@@ -45,11 +51,13 @@ def extract_json(text: str) -> dict[str, Any]:
 
 
 class EvolusAgent:
-    def __init__(self, llm: Any = None, agent_id: str | None = None):
+    def __init__(self, llm: Any = None, agent_id: str | None = None, factory_log: FactoryLog | None = None):
         self.llm = llm or evolus_client()
-        self.agent_id = agent_id or os.environ["EVOLUS_AGENT_ID"]
+        self.agent_id = agent_id or os.environ["EVOLUS_AGENT_ID"]  # "<applicationId>:<agentId>"
+        self.factory_log = factory_log or FactoryLog()
 
     def run(self, alert: Alert) -> tuple[dict[str, Any], list]:
+        start = self.factory_log.last()
         schema = json.dumps(SUBMIT_PLAN_SPEC["parameters"])
         prompt = (
             f"{alert_message(alert)}\n\n"
@@ -59,4 +67,5 @@ class EvolusAgent:
             model=self.agent_id,
             messages=[{"role": "user", "content": prompt}],
         )
-        return extract_json(strip_thinking(response.choices[0].message.content)), []
+        plan = extract_json(strip_thinking(response.choices[0].message.content or ""))
+        return plan, self.factory_log.calls_after(start)
