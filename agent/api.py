@@ -10,15 +10,17 @@ import os
 from fastapi import FastAPI
 from fastapi.concurrency import run_in_threadpool
 
-from agent import runner
+from agent import manual, runner
 from agent.models import AgentResult, Alert
 
 app = FastAPI(title="Pitstop agent")
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "backend": os.environ.get("AGENT_BACKEND", "local")}
+def health() -> dict[str, str | int]:
+    sections = len(manual.load_sections())
+    return {"status": "ok" if sections else "no manual", "backend": os.environ.get("AGENT_BACKEND", "local"),
+            "manual_sections": sections}
 
 
 @app.post("/incidents", response_model=AgentResult)

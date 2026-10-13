@@ -72,9 +72,9 @@ Status as of **Mon 12 Oct** (update this section at the end of each day).
 | Model choice | Akul | Qwen3-30B-A3B-Instruct-2507 (see Architecture) |
 | vLLM on AMD | Akul | **Blocked**: credits pending; `deploy/vllm/serve.sh` ready but untested on AMD |
 | Evolus | Akul | Workspace "Machine Whisperers" active (Developer Event, 50K credits); nothing built in it yet |
-| Failure model + replay | Teammate, Akul | 13 Oct: teammate's model (branches `failure-predictive-model`, `sensor_script`) rebuilt as `detector/` on branch `detector-mocks`: one machine, Alert contract, remaining cutting time from the model. Ran on real AI4I 13 Oct: 7/9 caught, 113 false alarms; alert at wear 168 with 36 cutting min left (before 3-reading smoothing) |
+| Failure model + replay | Teammate, Akul | 13 Oct: teammate's model (branches `failure-predictive-model`, `sensor_script`) rebuilt as `detector/` on branch `detector-mocks`: one machine, Alert contract, remaining cutting time from the model. Ran on real AI4I 13 Oct: 7/9 caught, 113 false alarms; alert at wear 160 with 38 cutting min left; all three scenarios ran end to end in Docker on the Ollama stand-in |
 | Mock factory systems | Teammate, Akul | 13 Oct: `mocks/` service on branch `detector-mocks` (seed `mocks/seed.json`, using the teammate's fictional suppliers) |
-| Manual, screens | Teammate | Not started; the teammate's manual JSON is too short (see the 13 Oct review); `devtools/fakes.py` stands in for the manual |
+| Manual, screens | Teammate | Not started; the teammate's manual JSON is too short (see the 13 Oct review); `manual/cnc_mill_m01.md` is a 3-section placeholder |
 
 Not yet proven: anything on AMD, the Evolus ↔ MCP connection (transport may need SSE), the real parts running together, and `docker compose up` on a clean machine.
 

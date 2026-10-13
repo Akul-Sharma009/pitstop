@@ -34,6 +34,12 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _next_hour(moment: datetime) -> datetime:
+    """Round up to the whole hour: suppliers quote deliveries on the hour."""
+    whole = moment.replace(minute=0, second=0, microsecond=0)
+    return whole if whole == moment else whole + timedelta(hours=1)
+
+
 def _error(status: int, detail: str) -> httpx.Response:
     return httpx.Response(status, json={"detail": detail})
 
@@ -119,7 +125,7 @@ class MockFactory:
         order = {
             **body, "po_id": po_id, "status": "pending_approval", "quantity": quantity,
             "supplier": supplier["supplier"],
-            "expected_delivery": (self.clock() + timedelta(hours=supplier["lead_time_hours"])).replace(microsecond=0).isoformat(),
+            "expected_delivery": _next_hour(self.clock() + timedelta(hours=supplier["lead_time_hours"])).isoformat(),
             "total_price": round(supplier["unit_price"] * quantity, 2), "currency": supplier["currency"],
         }
         self.orders[po_id] = order

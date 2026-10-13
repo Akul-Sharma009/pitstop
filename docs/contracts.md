@@ -31,7 +31,7 @@ detector ──Alert──▶ app ──Alert──▶ agent service ──tools
 }
 ```
 
-`predicted_failure_at` is calendar time derived from `remaining_cutting_min` with the detector's stated assumption (`CUTTING_MIN_PER_DAY`, default 20). `remaining_cutting_min` is the gap between the current tool wear and the wear at which the failure model starts flagging failure for these readings. `risk` is the model's score for these readings if the tool keeps cutting to the end of the alert horizon: uncalibrated, not a probability. See `detector/model.py`.
+`predicted_failure_at` is calendar time derived from `remaining_cutting_min` with the detector's stated assumption (`CUTTING_MIN_PER_DAY`, default 20). `remaining_cutting_min` is the gap between the current tool wear and the wear at which the failure model starts flagging failure for these readings. Both use the model's score averaged over the last few readings. `risk` is the highest such score within the alert horizon (`ALERT_HORIZON_MIN`), so it is at least the alert threshold whenever an alert is sent: uncalibrated, not a probability. See `detector/model.py`.
 
 ## 2. AgentResult (agent service → app)
 
@@ -85,7 +85,7 @@ The agent (and the MCP server) only use the endpoints marked **agent**. Approve/
 | POST | `/supplier/purchase-orders/{po_id}/approve` | **app only** | order with `status: "approved"` |
 | POST | `/supplier/purchase-orders/{po_id}/reject` | **app only** | order with `status: "rejected"` |
 
-`expected_delivery` = creation time + `lead_time_hours`; `total_price` = `unit_price` × `quantity`. `POST /supplier/purchase-orders` returns 404 for a part the supplier does not sell (same as the quote), so an invented part number can never be ordered.
+`expected_delivery` = creation time + `lead_time_hours`, rounded up to the whole hour; `total_price` = `unit_price` × `quantity`. `POST /supplier/purchase-orders` returns 404 for a part the supplier does not sell (same as the quote), so an invented part number can never be ordered.
 
 ### Engineer calendar
 

@@ -49,7 +49,7 @@ def test_demo_seed_supports_each_scenario_for_the_alert_range():
         for scenario in ("out_of_stock", "no_engineer"):
             _, client = demo(scenario)
             order = client.draft_purchase_order("EM-1004", 1, "M-01", "tool wear")
-            assert order["expected_delivery"] == (DETECTED + timedelta(hours=24)).isoformat()
+            assert order["expected_delivery"] == (START + timedelta(hours=25)).isoformat()  # rounded up to the hour
             earliest, latest = window(remaining)
             slots = client.find_free_engineers("cnc_tooling", order["expected_delivery"], latest, 30)["slots"]
             assert bool(slots) == (scenario == "out_of_stock"), (scenario, remaining)

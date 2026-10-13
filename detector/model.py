@@ -7,7 +7,8 @@ trained on start-up (about a second), so no pickled model is shipped.
 AI4I rows are independent synthetic snapshots, not a time series, so the model cannot say "fails in N
 minutes" by itself. We ask it a what-if question instead: for the current readings, at what tool wear does the
 model start flagging tool-wear failure? The gap to the current wear is the remaining cutting time. It is an
-estimate from the model's learned boundary, not a validated time-to-failure.
+estimate from the model's learned boundary, not a validated time-to-failure. Rows are independent, so one odd
+reading can swing the answer: the replay averages the model's score over the last few readings.
 """
 
 from __future__ import annotations
@@ -71,16 +72,23 @@ def train(rows: list[dict[str, Any]], threshold: float = 0.5) -> Trained:
     return Trained(model, test_rows, confusion)
 
 
-def score(model: RandomForestClassifier, row: dict[str, Any]) -> float:
-    """The model's tool-wear failure score for one reading (uncalibrated, not a probability)."""
-    return float(model.predict_proba(features([row]))[0, 1])
+def wear_curve(model: RandomForestClassifier, rows: list[dict[str, Any]]) -> tuple[np.ndarray, np.ndarray]:
+    """Tool wear from the latest reading's wear up, and the model's score at each, averaged over `rows`."""
+    wears = np.arange(rows[-1]["Tool wear [min]"], MAX_WEAR + 1, 1.0)
+    grid = np.repeat(features(rows), len(wears), axis=0)
+    grid[:, WEAR] = np.tile(wears, len(rows))
+    return wears, model.predict_proba(grid)[:, 1].reshape(len(rows), len(wears)).mean(axis=0)
 
 
-def wear_limit(model: RandomForestClassifier, row: dict[str, Any], threshold: float = 0.5) -> float | None:
+def wear_limit(model: RandomForestClassifier, rows: list[dict[str, Any]], threshold: float = 0.5) -> float | None:
     """The lowest tool wear, from the current wear up, at which the model flags failure for these readings."""
-    current = row["Tool wear [min]"]
-    wears = np.arange(current, MAX_WEAR + 1, 1.0)
-    grid = np.repeat(features([row]), len(wears), axis=0)
-    grid[:, WEAR] = wears
-    flagged = np.nonzero(model.predict_proba(grid)[:, 1] >= threshold)[0]
+    wears, scores = wear_curve(model, rows)
+    flagged = np.nonzero(scores >= threshold)[0]
     return float(wears[flagged[0]]) if len(flagged) else None
+
+
+def peak_score(model: RandomForestClassifier, rows: list[dict[str, Any]], horizon: float) -> float:
+    """The highest averaged score within the next `horizon` cutting minutes: at least the threshold when the
+    wear limit falls inside the horizon."""
+    wears, scores = wear_curve(model, rows)
+    return float(scores[wears <= wears[0] + horizon].max())

@@ -26,7 +26,7 @@ def test_model_catches_most_held_out_failures(trained):
 
 def test_wear_limit_is_in_the_failure_band(trained):
     healthy = [r for r in trained.test_rows if r["TWF"] == "0" and r["Tool wear [min]"] < 150]
-    limits = [wear_limit(trained.model, r) for r in healthy[:20]]
+    limits = [wear_limit(trained.model, [r]) for r in healthy[:20]]
     found = [limit for limit in limits if limit is not None]  # some odd readings never look like wear failure
     assert len(found) >= 0.8 * len(limits) and all(180 <= limit <= 245 for limit in found)
 
@@ -52,7 +52,7 @@ def test_replay_alerts_once_within_the_horizon_and_matches_the_contract(trained)
     assert alert["detected_at"] == "2026-10-14T09:20:00+00:00"
     expected = NOW.replace(second=0) + timedelta(days=remaining / 20)
     assert parsed.predicted_failure_at == expected
-    assert 0.5 <= alert["risk"] <= 1
+    assert 0.5 <= alert["risk"] <= 1  # the alert and the risk agree
     assert set(alert["readings"]) == {"air_temperature_k", "process_temperature_k", "rotational_speed_rpm", "torque_nm"}
 
 
@@ -73,12 +73,12 @@ def test_main_resets_the_scenario_and_sends_the_alert(trained, tmp_path, monkeyp
     assert sent["scenario"] == "in_stock" and sent["alert"]["machine_id"] == "M-01"
 
 
-def test_estimate_skips_a_reading_the_model_never_flags(trained, monkeypatch):
-    limits = iter([200.0, 200.0, None, 204.0])
-    monkeypatch.setattr(replay, "wear_limit", lambda model, row, threshold: next(limits))
-    rows = [{"Tool wear [min]": w} for w in (100, 110, 120, 130)]
-    remaining = [r for _, r in replay.watch(trained.model, rows, horizon=10, threshold=0.5)]
-    assert remaining == [100, 90, 80, 72]  # median of the last limits; the None reading keeps the estimate
+def test_one_odd_reading_does_not_hide_the_wear_limit(trained):
+    healthy = [r for r in trained.test_rows if r["Machine failure"] == "0" and r["Tool wear [min]"] < 150]
+    flagged = [r for r in healthy if wear_limit(trained.model, [r]) is not None][:2]
+    odd = next(r for r in healthy if wear_limit(trained.model, [r]) is None)
+    latest = {**odd, "Tool wear [min]": max(r["Tool wear [min]"] for r in flagged)}
+    assert wear_limit(trained.model, [*flagged, latest]) is not None
 
 
 def test_rows_load_with_a_byte_order_mark(tmp_path):

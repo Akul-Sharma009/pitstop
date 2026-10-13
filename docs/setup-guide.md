@@ -177,17 +177,7 @@ You need the **event code** from the kickoff (lablab.ai Discord or the kickoff e
    - Model name: `Qwen/Qwen3-30B-A3B-Instruct-2507`
 
    Screenshot this page for the submission.
-3. **Knowledge library:** upload the manual. Until your teammate's manual exists, use the short placeholder:
-
-   **[GPU]**
-   ```bash
-   docker compose run --rm --no-deps agent python -c "from devtools.fakes import MANUAL; print('# Machine manual M-01 (draft)\n\n' + '\n\n'.join(f'## {s.heading}\n{s.text}' for s in MANUAL))" > manual-draft.md
-   ```
-
-   **[Mac]**
-   ```bash
-   scp root@<IP>:pitstop/manual-draft.md ~/Downloads/
-   ```
+3. **Knowledge library:** upload the manual from the repo, `manual/cnc_mill_m01.md` (a short placeholder until your teammate's full manual replaces it). It is on your Mac already, in `~/pitstop/manual/`.
 
    Then upload `~/Downloads/manual-draft.md`.
 4. **MCP connector:**

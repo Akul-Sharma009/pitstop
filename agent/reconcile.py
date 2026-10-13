@@ -53,9 +53,8 @@ def reconcile(plan: dict[str, Any], trace: list[ToolCall]) -> tuple[dict[str, An
         for key in ("booking_id", "booking_start", "booking_end", "engineer_name"):
             plan[key] = None
         plan["status"] = "escalated"
-        no_slots = _no_slots_reason(trace)
-        if not plan.get("escalation_reason"):
-            plan["escalation_reason"] = no_slots or "No engineer booking was made."
+        no_slots = _no_slots_reason(trace)  # the facts beat the model's wording when the search came back empty
+        plan["escalation_reason"] = no_slots or plan.get("escalation_reason") or "No engineer booking was made."
 
     stock = next(
         (c for c in reversed(trace) if c.tool == "check_inventory" and _ok(c)
