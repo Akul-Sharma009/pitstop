@@ -1,8 +1,8 @@
-"""Temporary mock factory server (devtools.fakes.FakeFactory over HTTP) until mocks/ exists.
+"""HTTP server for the mock factory systems (docs/contracts.md section 3).
 
-Lets the MCP server and Evolus be tested against the real endpoints in docs/contracts.md.
-Run: uvicorn scripts.dev_mocks:app --port 8000
-Switch scenario: curl -X POST 'localhost:8000/admin/reset?scenario=in_stock'
+Run: uvicorn mocks.server:app --port 8000
+Before each demo run: curl -X POST 'localhost:8000/admin/reset?scenario=out_of_stock'
+Env: MOCKS_SEED (default mocks/seed.json), MOCKS_SCENARIO (default out_of_stock).
 """
 
 from __future__ import annotations
@@ -14,9 +14,9 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.types import Receive, Scope, Send
 
-from devtools.fakes import FakeFactory
+from mocks.factory import SEED, MockFactory, load_seed
 
-factory = FakeFactory(os.environ.get("DEV_SCENARIO", "out_of_stock"))
+factory = MockFactory(load_seed(os.environ.get("MOCKS_SEED") or SEED), os.environ.get("MOCKS_SCENARIO", "out_of_stock"))
 
 
 async def app(scope: Scope, receive: Receive, send: Send) -> None:

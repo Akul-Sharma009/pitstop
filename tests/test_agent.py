@@ -180,3 +180,37 @@ def test_no_think_also_sets_system_prompt_and_ollama_switch(monkeypatch):
     LocalAgent(llm=llm, factory=FakeFactory().client(), manual_sections=MANUAL, model="test").run(make_alert())
     assert llm.requests[0]["messages"][0]["content"].endswith("/no_think")
     assert llm.requests[0]["extra_body"]["think"] is False
+
+
+def test_repo_manual_grounds_the_tool_wear_part():
+    from agent import manual
+
+    sections = manual.load_sections("manual")
+    hits = manual.search("tool wear end mill replacement", sections)
+    assert hits and PART in manual.part_numbers(hits[0]["text"])
+
+
+def test_empty_manual_is_reported_not_silent():
+    agent = LocalAgent(llm=ScriptedLLM([]), factory=FakeFactory().client(), manual_sections=[], model="test")
+    assert "not loaded" in agent._execute("search_manual", {"query": "tool wear"})["error"]
+
+
+def test_health_reports_manual_sections(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from agent.api import app
+
+    monkeypatch.setenv("MANUAL_DIR", str(tmp_path))
+    assert TestClient(app).get("/health").json()["status"] == "no manual"
+    monkeypatch.setenv("MANUAL_DIR", "manual")
+    assert TestClient(app).get("/health").json()["manual_sections"] >= 3
+
+
+def test_escalation_reason_comes_from_the_empty_search():
+    from agent.models import ToolCall
+    from agent.reconcile import reconcile
+
+    search = ToolCall(tool="find_free_engineers", result={"slots": []},
+                      arguments={"earliest_start": "2026-10-15T08:00:00Z", "latest_end": "2026-10-16T08:00:00Z"})
+    plan, _ = reconcile({"escalation_reason": "after delivery on tomorrow (Thu 15 Oct) 08:00 UTC"}, [search])
+    assert plan["escalation_reason"] == "No qualified engineer is free between Thu 15 Oct 08:00 UTC and Fri 16 Oct 08:00 UTC."

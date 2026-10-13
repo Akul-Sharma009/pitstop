@@ -3,12 +3,9 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-from fastapi.testclient import TestClient
-
 from agent import runner
 from agent.local_agent import LocalAgent
 from devtools.fakes import MANUAL, PART, FakeFactory, ScriptedLLM, sample_alert, thin_path_script
-from scripts import dev_mocks
 from scripts.eval_agent import check
 
 
@@ -83,15 +80,6 @@ def test_submit_plan_in_same_turn_still_runs_other_calls():
     result = runner.run(sample_alert(), agent=agent, backend="local")
     assert result.booking_id == "BK-0001" and "BK-0001" in factory.bookings
     assert result.warnings == []
-
-
-def test_dev_mocks_serves_contract_and_resets():
-    client = TestClient(dev_mocks.app)
-    assert client.get(f"/inventory/parts/{PART}").json()["quantity_on_hand"] == 0
-    assert client.post("/admin/reset", params={"scenario": "in_stock"}).json() == {"scenario": "in_stock"}
-    assert client.get(f"/inventory/parts/{PART}").json()["quantity_on_hand"] == 2
-    assert client.post("/admin/reset", params={"scenario": "nope"}).status_code == 400
-    client.post("/admin/reset", params={"scenario": "out_of_stock"})
 
 
 def test_in_stock_earliest_slot_accepts_z_suffix():

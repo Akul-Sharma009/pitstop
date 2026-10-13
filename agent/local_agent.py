@@ -129,6 +129,8 @@ class LocalAgent:
 
     def _execute(self, name: str, arguments: dict[str, Any]) -> Any:
         if name == "search_manual":
+            if not self.sections:
+                return {"error": "The machine manual is not loaded (no .md files in MANUAL_DIR). Escalate to the manager."}
             hits = manual.search(str(arguments.get("query", "")), self.sections)
             for hit in hits:
                 self.manual_parts.update(manual.part_numbers(hit["text"]))

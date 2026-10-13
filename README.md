@@ -4,7 +4,7 @@ An AI maintenance agent for factories. A failure model spots a CNC milling machi
 
 The agent's language model is an open model served with **vLLM on AMD Developer Cloud** (AMD Instinct MI300X, ROCm). Built for the AMD Developer Hackathon ACT III (Intelligent Industry + Evolus tracks).
 
-> Status (12 Oct): work in progress. The agent service and the MCP server pass all three demo scenarios (part out of stock, part in stock, no engineer free) with the chosen model, Qwen3-30B-A3B-Instruct-2507, run locally as a stand-in while AMD Developer Cloud credits are pending. Still to come: the model on AMD, the Evolus integration, and the detector, mock factory systems and screens. Interfaces: [`docs/contracts.md`](docs/contracts.md).
+> Status (13 Oct): work in progress. The agent service and the MCP server pass all three demo scenarios (part out of stock, part in stock, no engineer free) with the chosen model, Qwen3-30B-A3B-Instruct-2507, run locally as a stand-in while AMD Developer Cloud credits are pending. The failure model replay (`detector/`) and the mock factory systems (`mocks/`) are built; the replay still needs a run on the real AI4I data. Still to come: the model on AMD, the Evolus integration, the machine manual and the screens. Interfaces: [`docs/contracts.md`](docs/contracts.md).
 
 ## Architecture
 
@@ -21,11 +21,17 @@ sensor replay (AI4I) → failure model → app ──alert──▶ agent servic
 | LLM: vLLM on AMD Developer Cloud | `deploy/vllm/` | 8080 on the GPU instance |
 | MCP server (factory tools for the agent / Evolus) | `mcp_server/` | 8001 |
 | Agent service (`AGENT_BACKEND=local` or `evolus`) | `agent/` | 8002 |
-| Mock factory systems | `mocks/` (in progress) | 8000 |
-| Failure model + sensor replay | `detector/` (in progress) | – |
+| Mock factory systems (inventory, supplier, calendar) | `mocks/` | 8000 |
+| Failure model + sensor replay | `detector/` | – |
 | Approval screen + operator summary | `app/` (in progress) | – |
 
-**About the data:** AI4I 2020 is a synthetic predictive maintenance dataset modelled on a real milling machine. The live feed is a sequence we build from its rows. The machine manual and the factory systems are mock-ups we wrote.
+**About the data:** [AI4I 2020](https://archive.ics.uci.edu/dataset/601) (UCI, CC BY 4.0) is a synthetic predictive maintenance dataset modelled on a real milling machine. Its rows are independent snapshots, not a time series, so:
+
+- The live feed for M-01 is a sequence we build from held-out AI4I rows (healthy readings in order of rising tool wear). The model never saw them in training.
+- The failure model (a random forest on the five sensor readings, by our teammate) flags tool-wear failure. It doesn't predict time by itself. We ask it at what tool wear it starts flagging failure under the current readings; the gap to the current wear is the remaining cutting time. One odd reading can swing that estimate, so the model's score is averaged over the last three readings. Calendar time assumes 20 cutting minutes per day (`CUTTING_MIN_PER_DAY`).
+- The model's score is not a calibrated probability. On the 2,000 held-out rows it catches 7 of the 9 tool-wear failures, with 113 false alarms (`python -m detector.train`, which also prints the scikit-learn version; the teammate's notebook got 6 of 9 and 100 with the same settings, probably on another version).
+
+The machine manual (`manual/`, a short placeholder for now) and the factory systems are mock-ups we wrote; suppliers and people are fictional.
 
 ## 1. Serve the model on AMD Developer Cloud
 
@@ -47,7 +53,7 @@ Shut the instance down when you're not using it: it uses credits.
 ```bash
 cp .env.example .env
 # Fill in VLLM_BASE_URL=http://<gpu-instance-ip>:8080/v1, VLLM_API_KEY, and the rest as needed.
-# If you run the scripts outside Docker against the dev mocks, MOCKS_URL=http://localhost:8000.
+# If you run the scripts outside Docker, MOCKS_URL=http://localhost:8000.
 ```
 
 All keys and endpoints come from environment variables. Never commit `.env`.
@@ -70,16 +76,24 @@ python -m scripts.eval_agent            # add --repeat 3 to check reliability, -
 ## 3. Run
 
 ```bash
-docker compose up --build                       # MCP server + agent
-docker compose --profile devmocks up --build    # + temporary mock factory systems (until mocks/ exists)
+docker compose up --build    # mock factory systems + MCP server + agent
 ```
 
+- Mock factory systems: `http://localhost:8000` (seed data in `mocks/seed.json`)
 - MCP server: `http://localhost:8001/mcp` (streamable HTTP; send `Authorization: Bearer $MCP_API_TOKEN` if set)
 - Agent service: `http://localhost:8002/docs`
 
 To expose the MCP server over HTTPS for Evolus, see [`docs/evolus-setup.md`](docs/evolus-setup.md).
 
-Send an alert to the agent (needs the model and the mock factory systems running):
+Replay the machine and let the detector send its alert to the agent (needs the model; first run downloads AI4I from UCI into `data/`):
+
+```bash
+docker compose run --build --rm detector --scenario out_of_stock   # or in_stock, no_engineer; --dry-run prints the alert only
+```
+
+`--scenario` resets the mock factory first: engineer slots are set relative to that moment. `--build` matters: `docker compose up --build` doesn't rebuild the detector, which only runs on demand.
+
+Or send an alert by hand:
 
 ```bash
 curl -s localhost:8002/incidents -H 'Content-Type: application/json' -d '{

@@ -1,9 +1,9 @@
 # vLLM runs separately on AMD Developer Cloud and is reached through VLLM_BASE_URL.
 # Teammate services (mocks, app, detector) join here; see docs/contracts.md.
 #
-#   docker compose up --build                                  MCP server + agent
-#   docker compose --profile devmocks up --build               + temporary mocks (until mocks/ exists)
-#   docker compose --profile devmocks --profile public up -d   + HTTPS on PUBLIC_HOST (for Evolus)
+#   docker compose up --build                       mock factory + MCP server + agent
+#   docker compose run --build --rm detector --scenario out_of_stock   replay M-01 and send the alert to the agent
+#   docker compose --profile public up -d           + HTTPS on PUBLIC_HOST (for Evolus)
 #
 # Service ports are bound to localhost; on a public server only Caddy (80/443) is reachable.
 services:
@@ -30,13 +30,28 @@ services:
     ports:
       - "127.0.0.1:8002:8002"
 
-  # Temporary stand-in for mocks/ (devtools.fakes.FakeFactory). Remove when the real mocks service lands.
   mocks:
-    profiles: ["devmocks"]
     build: .
-    command: uvicorn scripts.dev_mocks:app --host 0.0.0.0 --port 8000
+    command: uvicorn mocks.server:app --host 0.0.0.0 --port 8000
     ports:
       - "127.0.0.1:8000:8000"
+
+  # One-shot: docker compose run --build --rm detector [--scenario in_stock] [--dry-run]
+  detector:
+    profiles: ["replay"]
+    build: .
+    entrypoint: ["python", "-m", "detector.replay"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      ALERT_URL: http://agent:8002/incidents
+      MOCKS_URL: http://mocks:8000
+    volumes:
+      - ./data:/app/data   # ai4i2020.csv is downloaded here on first run
+    depends_on:
+      - agent
+      - mocks
 
   caddy:
     profiles: ["public"]

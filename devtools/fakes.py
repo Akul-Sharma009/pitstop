@@ -1,12 +1,12 @@
-"""Fakes for tests and dev runs: an in-memory factory implementing docs/contracts.md, a short manual,
-and a scripted LLM. Dates are pinned to the sample alert (detected 14 Oct 08:00 UTC, failure 16 Oct 08:00).
+"""Fakes for tests and the scenario eval: the mock factory with pinned test data, a short manual, and a
+scripted LLM. Dates are pinned to the sample alert (detected 14 Oct 08:00 UTC, failure 16 Oct 08:00).
 
-These stand in until mocks/ and manual/ exist; they are not the demo's mock systems."""
+The demo uses mocks/seed.json and manual/ instead."""
 
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
@@ -15,6 +15,7 @@ import httpx
 from agent.manual import Section
 from agent.models import Alert
 from mcp_server.factory import FactoryClient
+from mocks.factory import MockFactory
 
 PART = "EM-1004"
 NOW = datetime.fromisoformat("2026-10-14T08:00:00+00:00")
@@ -46,85 +47,29 @@ SLOTS = {
     "no_engineer": ["2026-10-14T15:00:00+00:00", "2026-10-16T12:00:00+00:00"],  # none between delivery and failure
 }
 
+_SUPPLIER = {"supplier": "ToolCo", "unit_price": 89.0, "currency": "EUR", "lead_time_hours": 24}
+FAKE_SEED = {
+    "note": "Test data pinned to the sample alert.",
+    "parts": [
+        {"part_number": PART, "name": "Carbide end mill 10 mm 4-flute", "location": "B-3",
+         "stock": {"out_of_stock": 0, "in_stock": 2, "no_engineer": 0}, "supplier": _SUPPLIER},
+        {"part_number": "EM-1006", "name": "Carbide end mill 6 mm 2-flute", "location": "B-3",
+         "stock": dict.fromkeys(SLOTS, 5), "supplier": _SUPPLIER},
+    ],
+    "engineers": [{"engineer_id": "E-01", "name": "Priya Nair", "skills": ["cnc_tooling"]}],
+    "slots": {
+        scenario: [{"engineer_id": "E-01", "hours_after_reset": (datetime.fromisoformat(s) - NOW) / timedelta(hours=1)}
+                   for s in starts]
+        for scenario, starts in SLOTS.items()
+    },
+}
 
-def _utc(value: datetime) -> datetime:
-    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
-
-class FakeFactory:
-    """In-memory mock systems for one scenario: out_of_stock, in_stock or no_engineer."""
+class FakeFactory(MockFactory):
+    """The mock factory systems with test seed data and the clock pinned to the sample alert (NOW)."""
 
     def __init__(self, scenario: str = "out_of_stock"):
-        self.reset(scenario)
-
-    def reset(self, scenario: str) -> None:
-        if scenario not in SLOTS:
-            raise ValueError(f"unknown scenario {scenario!r}")
-        self.scenario = scenario
-        self.stock = {PART: 2 if scenario == "in_stock" else 0, "EM-1006": 5}
-        self.slots = [datetime.fromisoformat(s) for s in SLOTS[scenario]]
-        self.orders: dict[str, dict] = {}
-        self.bookings: dict[str, dict] = {}
-
-    def handle(self, request: httpx.Request) -> httpx.Response:
-        path, method = request.url.path, request.method
-        if method == "POST" and path == "/admin/reset":
-            try:
-                self.reset(request.url.params.get("scenario", "out_of_stock"))
-            except ValueError as exc:
-                return httpx.Response(400, json={"detail": str(exc)})
-            return httpx.Response(200, json={"scenario": self.scenario})
-        if method == "GET" and path.startswith("/inventory/parts/"):
-            part = path.rsplit("/", 1)[1]
-            if part not in self.stock:
-                return httpx.Response(404, json={"detail": "unknown part"})
-            return httpx.Response(200, json={"part_number": part, "name": "Carbide end mill", "quantity_on_hand": self.stock[part], "location": "B-3"})
-        if method == "GET" and path.startswith("/supplier/parts/"):
-            part = path.rsplit("/", 1)[1]
-            if part not in self.stock:
-                return httpx.Response(404, json={"detail": "supplier does not sell this part"})
-            return httpx.Response(200, json={"part_number": part, "supplier": "ToolCo", "unit_price": 89.0, "currency": "EUR", "lead_time_hours": 24})
-        if method == "POST" and path == "/supplier/purchase-orders":
-            body = json.loads(request.content)
-            if body.get("part_number") not in self.stock:
-                return httpx.Response(404, json={"detail": "supplier does not sell this part"})
-            po_id = f"PO-{len(self.orders) + 1:04d}"
-            order = {**body, "po_id": po_id, "status": "pending_approval", "expected_delivery": (NOW + timedelta(hours=24)).isoformat()}
-            self.orders[po_id] = order
-            return httpx.Response(200, json=order)
-        if method == "GET" and path == "/calendar/engineers/free":
-            params = request.url.params
-            try:
-                earliest = _utc(datetime.fromisoformat(params["earliest_start"]))
-                latest = _utc(datetime.fromisoformat(params["latest_end"]))
-                duration = timedelta(minutes=int(params["duration_minutes"]))
-            except (KeyError, ValueError) as exc:
-                return httpx.Response(422, json={"detail": f"bad query: {exc}"})
-            if params.get("skill") != "cnc_tooling":
-                return httpx.Response(200, json=[])
-            free = [
-                {"engineer_id": "E-01", "name": "Priya Nair", "skills": ["cnc_tooling"],
-                 "slot_start": start.isoformat(), "slot_end": (start + duration).isoformat()}
-                for start in self.slots
-                if start >= earliest and start + duration <= latest
-            ]
-            return httpx.Response(200, json=free)
-        if method == "POST" and path == "/calendar/bookings":
-            body = json.loads(request.content)
-            try:
-                start = _utc(datetime.fromisoformat(body["start"]))
-            except (KeyError, ValueError) as exc:
-                return httpx.Response(422, json={"detail": f"bad booking: {exc}"})
-            if body.get("engineer_id") != "E-01" or start not in self.slots:
-                return httpx.Response(409, json={"detail": "engineer is not free at that time"})
-            order = self.orders.get(body.get("purchase_order_id") or "")
-            if order and start < _utc(datetime.fromisoformat(order["expected_delivery"])):
-                return httpx.Response(409, json={"detail": f"the part for {order['po_id']} arrives {order['expected_delivery']}"})
-            booking_id = f"BK-{len(self.bookings) + 1:04d}"
-            booking = {**body, "booking_id": booking_id, "status": "pending_approval"}
-            self.bookings[booking_id] = booking
-            return httpx.Response(200, json=booking)
-        return httpx.Response(404, json={"detail": "not found"})
+        super().__init__(FAKE_SEED, scenario, clock=lambda: NOW)
 
     def client(self) -> FactoryClient:
         return FactoryClient(base_url="http://mocks", transport=httpx.MockTransport(self.handle))
