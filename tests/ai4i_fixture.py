@@ -14,7 +14,7 @@ COLUMNS = ["UDI", "Product ID", "Type", "Air temperature [K]", "Process temperat
 
 def write_fixture(path: Path, rows: int = 3000, seed: int = 7) -> Path:
     rng = random.Random(seed)
-    with path.open("w", newline="", encoding="utf-8") as f:
+    with path.open("w", newline="", encoding="utf-8-sig") as f:  # a byte-order mark, like the UCI file
         writer = csv.writer(f)
         writer.writerow(COLUMNS)
         for udi in range(1, rows + 1):

@@ -41,11 +41,12 @@ def test_sequence_is_one_machine_with_rising_healthy_wear(trained):
 def test_replay_alerts_once_within_the_horizon_and_matches_the_contract(trained):
     rows = replay.sequence(trained.test_rows, step=8)
     seen = list(replay.watch(trained.model, rows, horizon=45, threshold=0.5))
-    row, remaining = seen[-1]
+    recent, remaining = seen[-1]
+    row = recent[-1]
     assert remaining is not None and 45 - 8 - 1 <= remaining <= 45  # one wear step inside the horizon
     assert all(r is None or r > 45 for _, r in seen[:-1])
 
-    alert = replay.make_alert(trained.model, row, remaining, NOW, cutting_min_per_day=20, horizon=45)
+    alert = replay.make_alert(trained.model, recent, remaining, NOW, cutting_min_per_day=20, horizon=45)
     parsed = Alert(**alert)
     assert parsed.machine_id == "M-01" and parsed.failure_type == "tool_wear"
     assert alert["detected_at"] == "2026-10-14T09:20:00+00:00"
@@ -70,3 +71,15 @@ def test_main_resets_the_scenario_and_sends_the_alert(trained, tmp_path, monkeyp
     monkeypatch.setenv("AI4I_CSV", str(write_fixture(tmp_path / "ai4i2020.csv")))
     assert replay.main(["--scenario", "in_stock", "--interval", "0"]) == 0
     assert sent["scenario"] == "in_stock" and sent["alert"]["machine_id"] == "M-01"
+
+
+def test_estimate_skips_a_reading_the_model_never_flags(trained, monkeypatch):
+    limits = iter([200.0, 200.0, None, 204.0])
+    monkeypatch.setattr(replay, "wear_limit", lambda model, row, threshold: next(limits))
+    rows = [{"Tool wear [min]": w} for w in (100, 110, 120, 130)]
+    remaining = [r for _, r in replay.watch(trained.model, rows, horizon=10, threshold=0.5)]
+    assert remaining == [100, 90, 80, 72]  # median of the last limits; the None reading keeps the estimate
+
+
+def test_rows_load_with_a_byte_order_mark(tmp_path):
+    assert "UDI" in load_rows(write_fixture(tmp_path / "ai4i2020.csv", rows=5))[0]

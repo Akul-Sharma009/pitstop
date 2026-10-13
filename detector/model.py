@@ -45,7 +45,7 @@ def ensure_data(path: Path = DATA) -> Path:
 
 
 def load_rows(path: Path) -> list[dict[str, Any]]:
-    with path.open(newline="", encoding="utf-8") as f:
+    with path.open(newline="", encoding="utf-8-sig") as f:  # the UCI file starts with a byte-order mark
         return [{k: (float(v) if k in FEATURES else v) for k, v in row.items()} for row in csv.DictReader(f)]
 
 

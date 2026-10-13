@@ -72,7 +72,7 @@ Status as of **Mon 12 Oct** (update this section at the end of each day).
 | Model choice | Akul | Qwen3-30B-A3B-Instruct-2507 (see Architecture) |
 | vLLM on AMD | Akul | **Blocked**: credits pending; `deploy/vllm/serve.sh` ready but untested on AMD |
 | Evolus | Akul | Workspace "Machine Whisperers" active (Developer Event, 50K credits); nothing built in it yet |
-| Failure model + replay | Teammate, Akul | 13 Oct: teammate's model (branches `failure-predictive-model`, `sensor_script`) rebuilt as `detector/` on branch `detector-mocks`: one machine, Alert contract, remaining cutting time from the model; needs a run on the real AI4I data |
+| Failure model + replay | Teammate, Akul | 13 Oct: teammate's model (branches `failure-predictive-model`, `sensor_script`) rebuilt as `detector/` on branch `detector-mocks`: one machine, Alert contract, remaining cutting time from the model. Ran on real AI4I 13 Oct: 7/9 caught, 113 false alarms; alert at wear 168 with 36 cutting min left (before 3-reading smoothing) |
 | Mock factory systems | Teammate, Akul | 13 Oct: `mocks/` service on branch `detector-mocks` (seed `mocks/seed.json`, using the teammate's fictional suppliers) |
 | Manual, screens | Teammate | Not started; the teammate's manual JSON is too short (see the 13 Oct review); `devtools/fakes.py` stands in for the manual |
 

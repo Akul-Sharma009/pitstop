@@ -28,8 +28,8 @@ sensor replay (AI4I) → failure model → app ──alert──▶ agent servic
 **About the data:** [AI4I 2020](https://archive.ics.uci.edu/dataset/601) (UCI, CC BY 4.0) is a synthetic predictive maintenance dataset modelled on a real milling machine. Its rows are independent snapshots, not a time series, so:
 
 - The live feed for M-01 is a sequence we build from held-out AI4I rows (healthy readings in order of rising tool wear). The model never saw them in training.
-- The failure model (a random forest on the five sensor readings, by our teammate) flags tool-wear failure. It doesn't predict time by itself. We ask it at what tool wear it starts flagging failure under the current readings; the gap to the current wear is the remaining cutting time. Calendar time assumes 20 cutting minutes per day (`CUTTING_MIN_PER_DAY`).
-- The model's score is not a calibrated probability. On held-out rows the prototype caught 6 of 9 tool-wear failures with 100 false alarms (teammate's notebook).
+- The failure model (a random forest on the five sensor readings, by our teammate) flags tool-wear failure. It doesn't predict time by itself. We ask it at what tool wear it starts flagging failure under the current readings; the gap to the current wear is the remaining cutting time. One odd reading can swing that estimate, so we take the median over the last three readings. Calendar time assumes 20 cutting minutes per day (`CUTTING_MIN_PER_DAY`).
+- The model's score is not a calibrated probability. On the 2,000 held-out rows it catches 7 of the 9 tool-wear failures, with 113 false alarms (`python -m detector.train`, which also prints the scikit-learn version; the teammate's notebook got 6 of 9 and 100 with the same settings, probably on another version).
 
 The machine manual and the factory systems are mock-ups we wrote; suppliers and people are fictional.
 

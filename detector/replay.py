@@ -1,12 +1,14 @@
 """Replay AI4I readings as one machine's live feed and send an Alert when the tool nears its wear limit.
 
 The feed for M-01 is a rising-tool-wear sequence we build from held-out AI4I rows (healthy readings, one per
-wear step); AI4I itself has no time series. Calendar time comes from a stated assumption:
-CUTTING_MIN_PER_DAY minutes of cutting per day.
+wear step); AI4I itself has no time series. Each reading gives a wear limit (detector/model.py); since rows
+are independent, one odd reading can swing it, so we use the median over the last few readings. Calendar
+time comes from a stated assumption: CUTTING_MIN_PER_DAY minutes of cutting per day.
 
 Usage: python -m detector.replay [--scenario out_of_stock|in_stock|no_engineer] [--dry-run] [--interval S]
 Env: ALERT_URL (agent's /incidents), MOCKS_URL (for --scenario), CUTTING_MIN_PER_DAY (20),
-     ALERT_HORIZON_MIN (45), WEAR_STEP_MIN (8), DETECTOR_THRESHOLD (0.5), AI4I_CSV (data/ai4i2020.csv).
+     ALERT_HORIZON_MIN (45), WEAR_STEP_MIN (8), WEAR_LIMIT_WINDOW (3), DETECTOR_THRESHOLD (0.5),
+     AI4I_CSV (data/ai4i2020.csv).
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import statistics
 import sys
 import time
 from collections.abc import Iterator
@@ -48,25 +51,35 @@ def readings(row: dict[str, Any]) -> dict[str, float]:
     }
 
 
-def watch(model: Any, rows: list[dict[str, Any]], horizon: float, threshold: float) -> Iterator[tuple[dict, float | None]]:
-    """Yield (reading, remaining cutting minutes or None) until the first reading within the horizon."""
+def watch(model: Any, rows: list[dict[str, Any]], horizon: float, threshold: float,
+          window: int = 3) -> Iterator[tuple[list[dict], float | None]]:
+    """Yield (last `window` readings, remaining cutting minutes or None) until the estimate is within the horizon.
+
+    The wear limit is the median of the last readings' limits, skipping readings the model never flags.
+    """
+    recent: list[tuple[dict[str, Any], float | None]] = []
     for row in rows:
-        limit = wear_limit(model, row, threshold)
-        remaining = None if limit is None else limit - row["Tool wear [min]"]
-        yield row, remaining
+        recent = [*recent, (row, wear_limit(model, row, threshold))][-window:]
+        limits = [limit for _, limit in recent if limit is not None]
+        remaining = max(statistics.median(limits) - row["Tool wear [min]"], 0.0) if limits else None
+        yield [r for r, _ in recent], remaining
         if remaining is not None and remaining <= horizon:
             return
 
 
-def make_alert(model: Any, row: dict[str, Any], remaining: float, now: datetime, cutting_min_per_day: float,
+def make_alert(model: Any, recent: list[dict[str, Any]], remaining: float, now: datetime, cutting_min_per_day: float,
                horizon: float) -> dict[str, Any]:
-    """The Alert of docs/contracts.md. risk: the model's score for these readings at the end of the horizon."""
-    at_horizon = {**row, "Tool wear [min]": row["Tool wear [min]"] + horizon}
+    """The Alert of docs/contracts.md for the latest reading.
+
+    risk: the median model score of the recent readings if the tool keeps cutting to the end of the horizon.
+    """
+    row = recent[-1]
+    end = row["Tool wear [min]"] + horizon
     detected = now.replace(second=0, microsecond=0)
     return {
         "machine_id": MACHINE,
         "failure_type": "tool_wear",
-        "risk": round(score(model, at_horizon), 2),
+        "risk": round(statistics.median(score(model, {**r, "Tool wear [min]": end}) for r in recent), 2),
         "tool_wear_min": round(row["Tool wear [min]"]),
         "remaining_cutting_min": round(remaining),
         "detected_at": detected.isoformat(),
@@ -85,6 +98,7 @@ def main(argv: list[str] | None = None) -> int:
     env = os.environ.get
     per_day, horizon = float(env("CUTTING_MIN_PER_DAY", 20)), float(env("ALERT_HORIZON_MIN", 45))
     threshold, step = float(env("DETECTOR_THRESHOLD", 0.5)), float(env("WEAR_STEP_MIN", 8))
+    window = int(env("WEAR_LIMIT_WINDOW", 3))
 
     trained = train(load_rows(ensure_data(Path(env("AI4I_CSV") or DATA))), threshold)
     (normal, false_alarms), (missed, caught) = trained.confusion
@@ -97,17 +111,18 @@ def main(argv: list[str] | None = None) -> int:
         httpx.post(f"{mocks}/admin/reset", params={"scenario": args.scenario}, timeout=10).raise_for_status()
         print(f"Mock factory reset to scenario {args.scenario}.")
 
-    row: dict[str, Any] = {}
+    recent: list[dict[str, Any]] = []
     remaining: float | None = None
-    for row, remaining in watch(trained.model, sequence(trained.test_rows, step), horizon, threshold):
-        left = "no failure in sight" if remaining is None else f"about {remaining:.0f} cutting min to the wear limit"
+    for recent, remaining in watch(trained.model, sequence(trained.test_rows, step), horizon, threshold, window):
+        row = recent[-1]
+        left = "no estimate yet" if remaining is None else f"about {remaining:.0f} cutting min to the wear limit"
         print(f"{MACHINE} tool wear {row['Tool wear [min]']:>5.0f} min | torque {row['Torque [Nm]']:>4.1f} Nm | {left}")
         time.sleep(args.interval)
     if remaining is None or remaining > horizon:
         print("The replay ended without an alert.")
         return 1
 
-    alert = make_alert(trained.model, row, remaining, datetime.now(timezone.utc), per_day, horizon)
+    alert = make_alert(trained.model, recent, remaining, datetime.now(timezone.utc), per_day, horizon)
     print(f"\nALERT: {json.dumps(alert, indent=2)}")
     if args.dry_run:
         return 0
