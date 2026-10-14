@@ -268,3 +268,18 @@ def test_evolus_message_asks_for_english_and_an_example_not_a_schema():
     message = evolus_message(make_alert())
     assert "in English" in message and '"properties"' not in message and '"operator_summary"' in message
     assert "Always write in English" in EVOLUS_SYSTEM_PROMPT
+
+
+def test_downtime_saved_from_the_booking_and_stated_assumptions(monkeypatch):
+    result, _ = run_local(thin_path_script())
+    assert result.downtime.planned_min == 30 and result.downtime.unplanned_h == 8
+    assert result.downtime.saved_h == 7.5 and result.downtime.money_saved == 3750 and result.downtime.currency == "SGD"
+    monkeypatch.setenv("UNPLANNED_DOWNTIME_H", "6")
+    monkeypatch.setenv("DOWNTIME_COST_PER_H", "1000")
+    result, _ = run_local(thin_path_script())
+    assert result.downtime.money_saved == 5500 and "about 6 h" in result.downtime.assumptions
+
+
+def test_no_downtime_figure_without_a_booking():
+    result, _ = run_local(thin_path_script(), scenario="no_engineer")
+    assert result.status == "escalated" and result.downtime is None

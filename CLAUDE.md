@@ -66,26 +66,29 @@ Status as of **Wed 14 Oct** (update this section at the end of each day).
 
 | Part | Owner | Status |
 |---|---|---|
-| Repo, Docker, README, licence, contracts | Akul | Done, merged to `master` (PR #1) |
+| Repo, Docker, README, licence, contracts | Akul | Done, on `master` (PRs #1–#3) |
 | Agent service + guardrails | Akul | Done: 6/6 on `scripts.eval_agent` (Ollama stand-in, ~2 s per model call) |
 | MCP server | Akul | Done; connected to Evolus as a manual Connector (5 tools) through a Cloudflare tunnel |
 | Model choice | Akul | Qwen3-30B-A3B-Instruct-2507 (see Architecture) |
 | vLLM on AMD | Akul | **Blocked**: credits pending; `deploy/vllm/serve.sh` ready but untested on AMD. Decision 13 Oct: if no credits by **Fri 16 Oct**, pay for an MI300X (~$2/h, on only while used) |
-| Evolus | Akul | 14 Oct: thin path runs end to end through Evolus on the Ollama stand-in (branch `evolus-integration`): detector alert → agent "Pitstop maintenance planner" (knowledge library + factory connector) → order + booking → checked plan, no warnings. Trace comes from the mocks' call log |
-| Failure model + replay | Teammate, Akul | 13 Oct: teammate's model (branches `failure-predictive-model`, `sensor_script`) rebuilt as `detector/` on branch `detector-mocks`: one machine, Alert contract, remaining cutting time from the model. Ran on real AI4I 13 Oct: 7/9 caught, 113 false alarms; alert at wear 160 with 38 cutting min left; all three scenarios ran end to end in Docker on the Ollama stand-in |
-| Mock factory systems | Teammate, Akul | 13 Oct: `mocks/` service on branch `detector-mocks` (seed `mocks/seed.json`, using the teammate's fictional suppliers) |
+| Evolus | Akul | 14 Oct: all three scenarios run end to end through Evolus on the Ollama stand-in, no warnings (PR #3): detector alert → agent "Pitstop maintenance planner" (knowledge library + factory Connector) → order + booking → checked plan. Trace comes from the mocks' call log |
+| Failure model + replay | Teammate, Akul | Done, on `master` (PR #2): teammate's model rebuilt as `detector/`; one machine, Alert contract, remaining cutting time from the model. Real AI4I: 7/9 caught, 113 false alarms; alert at wear 160 with 40 cutting min left |
+| Mock factory systems | Teammate, Akul | Done, on `master` (PR #2): `mocks/` service, seed `mocks/seed.json` (teammate's fictional suppliers); logs agent calls; enforces the repair window |
 | Manual, screens | Teammate | Not started; the teammate's manual JSON is too short (see the 13 Oct review); `manual/cnc_mill_m01.md` is a 3-section placeholder |
 
-Not yet proven: anything on AMD, the `in_stock` and `no_engineer` scenarios through Evolus, the screens, and `docker compose up` on a clean machine.
+Not yet proven: anything on AMD, the screens, the full manual, and `docker compose up` on a clean machine.
+
+Open decisions: hosting for the live URL (recommended: one small VM, or the AMD instance while it's on, with `docker compose --profile public`); the deadline's time zone and the lablab submission checklist; whether the operator summary names the engineer (a `SYSTEM_PROMPT` change: rerun the local eval and re-paste the Evolus prompt).
 
 Risks:
 - **AMD credits pending** (account validation submitted 12 Oct; AMD says up to 3–5 business days, which could be after the deadline). Chase them: devcloudrequests@amd.com, the lablab.ai Discord, and a teammate application. Until then, develop against a stand-in (Ollama + the same model, 4-bit, on a Mac, see `docs/setup-guide.md`). The stand-in is never presented as the AMD part; the demo, the video and Evolus must use vLLM on AMD.
 - **Thin path by Wed 14 Oct** needs AMD, Evolus and the teammate's three parts. Fallback: run the whole flow on the stand-in model and fake factory systems by Wednesday, then swap in AMD and the real parts as they land.
 
 Plan for **Thu 15 Oct**:
-1. Evolus: rerun the three scenarios with `AGENT_BACKEND=evolus`; merge `evolus-integration`.
-2. Teammate: full manual (4–6 pages) and the approval / operator screens; review and join them up.
-3. Check AMD credits (cut-off Fri 16 Oct, see above).
+1. Teammate: full manual (4–6 pages) and the approval / operator screens (they show `downtime` too); review and join them up.
+2. Check AMD credits (cut-off Fri 16 Oct, see above); decide hosting with it.
+3. Rough backup video of the current flow (internal only: it uses the stand-in).
+4. Delete merged branches on GitHub: `agent-mcp-server`, `detector-mocks`, `evolus-integration`, `claude/practical-volta-yg4v5p`.
 
 ## Work split
 

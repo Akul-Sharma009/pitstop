@@ -54,6 +54,15 @@ Response of `POST /incidents`:
   "booking_end": "2026-10-15T14:30:00+00:00",
   "escalation_reason": null,
   "operator_summary": "Plain-language text: what is wrong, what has been done, what happens next.",
+  "downtime": {
+    "planned_min": 30,
+    "unplanned_h": 8,
+    "saved_h": 7.5,
+    "cost_per_h": 500,
+    "currency": "SGD",
+    "money_saved": 3750,
+    "assumptions": "An unplanned tool breakdown stops the machine for about 8 h; downtime costs about 500 SGD per hour."
+  },
   "warnings": [],
   "trace": [{"tool": "check_inventory", "arguments": {"part_number": "EM-1004"}, "result": {"...": "..."}}],
   "backend": "local"
@@ -61,6 +70,7 @@ Response of `POST /incidents`:
 ```
 
 - `status`: `awaiting_approval` (drafts created) or `escalated` (no engineer free in the window; the manager must act). `escalated` may still include a purchase order.
+- `downtime`: downtime saved by the planned swap, for the operator summary screen. Computed by the agent service, not the model: `planned_min` is the booked repair time; `unplanned_h` and `cost_per_h` are stated assumptions (env `UNPLANNED_DOWNTIME_H`, `DOWNTIME_COST_PER_H`, `DOWNTIME_CURRENCY`), shown with `assumptions`. `null` unless a repair is booked.
 - `warnings`: guardrail findings, e.g. a part number not found in the manual or tools, or a booking outside the delivery → failure window. The app should show them to the manager.
 - `trace`: every tool call, for the approval screen ("why the agent did this").
 - Example part numbers and names above are placeholders: the real ones come from the manual and the mock seed data.
