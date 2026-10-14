@@ -1,7 +1,7 @@
 # Pitstop — AI maintenance agent for factories
 
 Hackathon entry for **AMD Developer Hackathon ACT III**, tracks **Intelligent Industry** + **Evolus** (partner track).
-Submission deadline: **Sun 18 Oct 2026, 18:00 SGT** (the event itself ends 23:00 SGT). Our target: **submitted by 12:00 SGT Sunday**; Akul's exams start 19 Oct, so there is no time for anything after that. Thin path must run end to end by **Wed 14 Oct**; feature freeze **Sat 17 Oct, 12:00 SGT** (after that, only bug fixes and the pitch). Record a rough backup demo video as soon as the thin path works.
+Submission deadline: **Sun 18 Oct 2026, 18:00 SGT** (the event itself ends 23:00 SGT). Our target: **submitted by 12:00 SGT Sunday**; Akul's exams start 19 Oct, so there is no time for anything after that. Thin path must run end to end by **Wed 14 Oct**; feature freeze **Sat 17 Oct, 12:00 SGT** (after that, only bug fixes and the pitch). No separate backup video: if AMD fails, the demo video is recorded on the stand-in in the AMD video slot (Sat PM), with an honest note.
 
 ## The project
 
@@ -91,12 +91,12 @@ Plan to the deadline (agreed 14 Oct; one branch per item, Akul tests each before
 
 | When | What |
 |---|---|
-| Thu 15 | Stress-test eval + fixes (`stress-tests`); replan on reject: the manager rejects with a reason, the agent replans (`replan-on-reject`); rough backup video |
+| Thu 15 | Stress-test eval + fixes (`stress-tests`); replan on reject: the manager rejects with a reason, the agent replans (`replan-on-reject`) |
 | Fri 16 | Supplier choice: cheap/slow vs fast/dear, cheapest that arrives in time (`supplier-choice`); **AMD**: credits or pay by evening, `serve.sh`, eval on AMD, Evolus model switched; hosting set up (AMD instance or a small VM) |
 | Fri–Sat AM | Fleet mode: 3–5 machines in parallel on one MI300X (`fleet-mode`), tested on AMD Sat morning, **cut first if anything slips**; operator chat via the Evolus widget once hosted |
 | Sat 17, 12:00 | **Feature freeze** |
-| Sat 17 PM | Fresh-clone README test; demo video on AMD; slides, cover image, descriptions and tags (Claude drafts, Akul reviews) |
-| Sun 18 AM | Final checks and upload; **submit by 12:00 SGT**. No building or recording on Sunday: if the AMD video isn't done by Sat evening, submit the backup video plus AMD screenshots with an honest note |
+| Sat 17 PM | Fresh-clone README test; demo video on AMD (if AMD failed: on the stand-in, said plainly); slides, cover image, descriptions and tags (Claude drafts, Akul reviews) |
+| Sun 18 AM | Final checks and upload; **submit by 12:00 SGT**. No building or recording on Sunday |
 
 Priority if time runs short: stress-test fixes → replan on reject → AMD → supplier choice → hosting → operator chat → fleet mode.
 
