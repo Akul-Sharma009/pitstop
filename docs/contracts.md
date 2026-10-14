@@ -93,13 +93,13 @@ The agent (and the MCP server) only use the endpoints marked **agent**. Approve/
 
 | Method | Path | Used by | Body / response |
 |---|---|---|---|
-| GET | `/supplier/parts/{part_number}` | agent | `{"part_number", "supplier", "unit_price", "currency", "lead_time_hours"}`; 404 if not sold |
-| POST | `/supplier/purchase-orders` | agent | body `{"part_number", "quantity", "machine_id", "reason"}` → `{"po_id", "status": "pending_approval", "part_number", "quantity", "expected_delivery", "total_price", "currency"}` |
+| GET | `/supplier/parts/{part_number}` | agent | `{"part_number", "offers": [{"supplier", "unit_price", "currency", "lead_time_hours", "expected_delivery"}]}`, cheapest first; `expected_delivery` if ordered now; 404 if nobody sells it |
+| POST | `/supplier/purchase-orders` | agent | body `{"part_number", "quantity", "machine_id", "reason", "supplier"?}` (default: the cheapest offer) → `{"po_id", "status": "pending_approval", "part_number", "quantity", "supplier", "expected_delivery", "total_price", "currency"}`; 404 if that supplier doesn't sell the part |
 | GET | `/supplier/purchase-orders/{po_id}` | app | the order |
 | POST | `/supplier/purchase-orders/{po_id}/approve` | **app only** | order with `status: "approved"` |
 | POST | `/supplier/purchase-orders/{po_id}/reject` | **app only** | order with `status: "rejected"` |
 
-One open order per part and machine: `POST /supplier/purchase-orders` returns 409 (naming the open order) while a non-rejected order for the same part and machine exists. `expected_delivery` = creation time + `lead_time_hours`, rounded up to the whole hour; `total_price` = `unit_price` × `quantity`. `POST /supplier/purchase-orders` returns 404 for a part the supplier does not sell (same as the quote), so an invented part number can never be ordered.
+The agent orders from the cheapest offer that arrives in time to repair before the predicted failure (the guard warns when a dearer one was chosen without need). One open order per part and machine: `POST /supplier/purchase-orders` returns 409 (naming the open order) while a non-rejected order for the same part and machine exists. `expected_delivery` = creation time + `lead_time_hours`, rounded up to the whole hour; `total_price` = `unit_price` × `quantity`. `POST /supplier/purchase-orders` returns 404 for a part the supplier does not sell (same as the quote), so an invented part number can never be ordered.
 
 ### Engineer calendar
 

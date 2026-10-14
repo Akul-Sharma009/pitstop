@@ -166,3 +166,52 @@ def test_no_booking_without_the_part():
     search = [c for c in result.trace if c.tool == "find_free_engineers"][0]
     assert "not in stock and not on order" in search.result["error"]
     assert result.status == "escalated" and check("replan_budget_frozen", result, factory) == []
+
+
+def fast_supplier_steps(supplier):
+    s = SCENARIOS["fast_supplier"]
+    delivery = (NOW + timedelta(hours=6 if supplier == "SpeedTool" else 24)).isoformat()
+    return [
+        ("search_manual", {"query": "tool wear end mill"}),
+        ("check_inventory", {"part_number": "EM-1004"}),
+        ("get_supplier_quote", {"part_number": "EM-1004"}),
+        ("draft_purchase_order", {"part_number": "EM-1004", "quantity": 1, "machine_id": "M-01", "reason": "Tool wear",
+                                  "supplier": supplier}),
+        ("find_free_engineers", {"skill": "cnc_tooling", "earliest_start": delivery,
+                                 "latest_end": s.failure_at.isoformat(), "duration_minutes": 30}),
+        ("draft_booking", {"engineer_id": "E-01", "machine_id": "M-01", "start": "2026-10-14T15:00:00+00:00",
+                           "end": "2026-10-14T15:30:00+00:00", "task": "Replace end mill", "purchase_order_id": "PO-0001"}),
+        plan(part_number="EM-1004", part_in_stock=False, operator_summary="Priya Nair will replace the tool today at 15:00 UTC."),
+    ]
+
+
+def test_fast_supplier_when_the_cheap_one_is_too_late():
+    result, factory = run("fast_supplier", fast_supplier_steps("SpeedTool"))
+    assert factory.orders["PO-0001"]["supplier"] == "SpeedTool" and factory.orders["PO-0001"]["total_price"] == 145.0
+    assert result.warnings == [] and check("fast_supplier", result, factory) == []
+
+
+def test_cheap_supplier_too_late_is_caught():
+    result, factory = run("fast_supplier", fast_supplier_steps("ToolCo"))
+    problems = check("fast_supplier", result, factory)
+    assert any("ordered from ToolCo, expected SpeedTool" in p for p in problems)
+    assert not factory.bookings  # its delivery is after the failure: the calendar refused
+
+
+def test_paying_for_speed_without_need_is_flagged():
+    s = SCENARIOS["out_of_stock"]
+    steps = [
+        ("search_manual", {"query": "tool wear end mill"}),
+        ("check_inventory", {"part_number": "EM-1004"}),
+        ("get_supplier_quote", {"part_number": "EM-1004"}),
+        ("draft_purchase_order", {"part_number": "EM-1004", "quantity": 1, "machine_id": "M-01", "reason": "x",
+                                  "supplier": "SpeedTool"}),
+        ("find_free_engineers", {"skill": "cnc_tooling", "earliest_start": (NOW + timedelta(hours=6)).isoformat(),
+                                 "latest_end": s.failure_at.isoformat(), "duration_minutes": 30}),
+        ("draft_booking", {"engineer_id": "E-01", "machine_id": "M-01", "start": "2026-10-15T14:00:00+00:00",
+                           "end": "2026-10-15T14:30:00+00:00", "task": "x", "purchase_order_id": "PO-0001"}),
+        plan(part_number="EM-1004", part_in_stock=False),
+    ]
+    result, factory = run("out_of_stock", steps)
+    assert any("ToolCo (EUR 89) would have arrived in time" in w for w in result.warnings)
+    assert any("ordered from SpeedTool, expected ToolCo" in p for p in check("out_of_stock", result, factory))

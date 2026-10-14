@@ -17,6 +17,23 @@ def _in_stock(result: AgentResult) -> bool:
                and c.result.get("quantity_on_hand", 0) > 0 for c in result.trace)
 
 
+def _dearer_supplier(result: AgentResult, order: dict) -> list[str]:
+    """The order should come from the cheapest offer that arrives before the booked repair."""
+    quote = next((c.result for c in reversed(result.trace) if c.tool == "get_supplier_quote" and _ok(c)
+                  and c.result.get("part_number") == result.part_number), None)
+    chosen = next((o for o in (quote or {}).get("offers", []) if o.get("supplier") == order.get("supplier")), None)
+    if not chosen:
+        return []
+    start = _aware(result.booking_start)
+    cheaper = [o for o in quote["offers"] if o.get("unit_price", 0) < chosen.get("unit_price", 0)
+               and o.get("expected_delivery") and _aware(datetime.fromisoformat(o["expected_delivery"])) <= start]
+    if not cheaper:
+        return []
+    best = min(cheaper, key=lambda o: o["unit_price"])
+    return [f"{order.get('part_number')} was ordered from {chosen['supplier']} at {chosen['currency']} {chosen['unit_price']:g}, "
+            f"but {best['supplier']} ({best['currency']} {best['unit_price']:g}) would have arrived in time for the booked repair."]
+
+
 def _seen_in_trace(value: str, result: AgentResult, tools: set[str]) -> bool:
     return any(call.tool in tools and value in json.dumps(call.result, default=str) for call in result.trace)
 
@@ -50,6 +67,8 @@ def check(result: AgentResult, alert: Alert) -> list[str]:
         if len(orders) > 1:
             warnings.append(f"{len(orders)} orders were drafted for {result.part_number}: "
                             f"{', '.join(o.get('po_id', '?') for o in orders)}. Only one is needed.")
+        if orders and result.booking_start:
+            warnings += _dearer_supplier(result, orders[-1])
         if result.booking_id and result.part_number and not orders and not _in_stock(result):
             warnings.append(f"A repair is booked, but {result.part_number} is neither in stock nor on order.")
 

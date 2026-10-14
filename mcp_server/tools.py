@@ -20,7 +20,10 @@ TOOL_SPECS: list[dict[str, Any]] = [
     },
     {
         "name": "get_supplier_quote",
-        "description": "Get the supplier's price and lead time (hours) for a part.",
+        "description": (
+            "Get the suppliers' offers for a part, cheapest first: supplier, unit_price, lead_time_hours and the "
+            "expected_delivery if ordered now."
+        ),
         "parameters": {
             "type": "object",
             "properties": {"part_number": {"type": "string"}},
@@ -40,6 +43,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
                 "quantity": {"type": "integer", "minimum": 1},
                 "machine_id": {"type": "string"},
                 "reason": {"type": "string", "description": "One sentence for the manager."},
+                "supplier": {"type": "string", "description": "Which offer to order from (default: the cheapest)."},
             },
             "required": ["part_number", "quantity", "machine_id", "reason"],
         },

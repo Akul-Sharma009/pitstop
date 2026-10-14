@@ -54,6 +54,9 @@ class MockFactory:
         self.seed = seed
         self.clock = clock
         self.parts = {p["part_number"]: p for p in seed["parts"]}
+        # Offers per part, cheapest first; a seed part may give one "supplier" or a list of "suppliers".
+        self.offers = {number: sorted(p.get("suppliers") or ([p["supplier"]] if p.get("supplier") else []),
+                                      key=lambda o: o["unit_price"]) for number, p in self.parts.items()}
         self.engineers = {e["engineer_id"]: e for e in seed["engineers"]}
         self.calls: list[dict[str, Any]] = []
         self.seq = 0  # keeps counting across resets, so "calls after N" stays meaningful
@@ -152,16 +155,24 @@ class MockFactory:
                                          "quantity_on_hand": self.stock[number], "location": part["location"]})
 
     def _quote(self, request: httpx.Request, number: str) -> httpx.Response:
-        supplier = (self.parts.get(number) or {}).get("supplier")
-        if not supplier:
-            return _error(404, "supplier does not sell this part")
-        return httpx.Response(200, json={"part_number": number, **supplier})
+        offers = self.offers.get(number)
+        if not offers:
+            return _error(404, "no supplier sells this part")
+        now = self.clock()
+        return httpx.Response(200, json={"part_number": number, "offers": [
+            {**offer, "expected_delivery": _next_hour(now + timedelta(hours=offer["lead_time_hours"])).isoformat()}
+            for offer in offers]})
 
     def _draft_order(self, request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content or b"{}")
-        supplier = (self.parts.get(body.get("part_number")) or {}).get("supplier")
-        if not supplier:  # an invented part number can never be ordered
-            return _error(404, "supplier does not sell this part")
+        offers = self.offers.get(body.get("part_number"))
+        if not offers:  # an invented part number can never be ordered
+            return _error(404, "no supplier sells this part")
+        wanted = body.get("supplier")
+        supplier = next((o for o in offers if o["supplier"] == wanted), None) if wanted else offers[0]
+        if not supplier:
+            return _error(404, f"{wanted} does not sell {body.get('part_number')}; "
+                               f"offers: {', '.join(o['supplier'] for o in offers)}")
         open_order = next((o for o in self.orders.values() if o["part_number"] == body.get("part_number")
                            and o.get("machine_id") == body.get("machine_id") and o["status"] != "rejected"), None)
         if open_order:  # purchasing rule: one open order per part and machine

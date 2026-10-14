@@ -1,5 +1,5 @@
 {
-  "note": "Fictional demo data for Pitstop: no real parts, suppliers, people, purchases or bookings. Engineer slots are hours after the last /admin/reset. Part numbers must match manual/.",
+  "note": "Fictional demo data for Pitstop: no real parts, suppliers, people, purchases or bookings. Engineer slots are hours after the last /admin/reset. Part numbers must match manual/. Scenario urgent: run the detector with CUTTING_MIN_PER_DAY=60 so only the fast supplier arrives in time.",
   "parts": [
     {
       "part_number": "EM-1004",
@@ -8,14 +8,23 @@
       "stock": {
         "out_of_stock": 0,
         "in_stock": 2,
-        "no_engineer": 0
+        "no_engineer": 0,
+        "urgent": 0
       },
-      "supplier": {
-        "supplier": "Example Industrial Supply (fictional)",
-        "unit_price": 89.0,
-        "currency": "SGD",
-        "lead_time_hours": 24
-      }
+      "suppliers": [
+        {
+          "supplier": "Example Industrial Supply (fictional)",
+          "unit_price": 89.0,
+          "currency": "SGD",
+          "lead_time_hours": 24
+        },
+        {
+          "supplier": "Example Tooling Partner (fictional)",
+          "unit_price": 145.0,
+          "currency": "SGD",
+          "lead_time_hours": 6
+        }
+      ]
     },
     {
       "part_number": "EM-1006",
@@ -24,7 +33,8 @@
       "stock": {
         "out_of_stock": 5,
         "in_stock": 5,
-        "no_engineer": 5
+        "no_engineer": 5,
+        "urgent": 5
       },
       "supplier": {
         "supplier": "Example Industrial Supply (fictional)",
@@ -40,7 +50,8 @@
       "stock": {
         "out_of_stock": 1,
         "in_stock": 1,
-        "no_engineer": 1
+        "no_engineer": 1,
+        "urgent": 1
       },
       "supplier": {
         "supplier": "Example Tooling Partner (fictional)",
@@ -113,11 +124,25 @@
     "no_engineer": [
       {
         "engineer_id": "E-01",
-        "hours_after_reset": 7
+        "hours_after_reset": 5
       },
       {
         "engineer_id": "E-01",
         "hours_after_reset": 80
+      },
+      {
+        "engineer_id": "E-02",
+        "hours_after_reset": 26
+      }
+    ],
+    "urgent": [
+      {
+        "engineer_id": "E-01",
+        "hours_after_reset": 9
+      },
+      {
+        "engineer_id": "E-01",
+        "hours_after_reset": 30
       },
       {
         "engineer_id": "E-02",
