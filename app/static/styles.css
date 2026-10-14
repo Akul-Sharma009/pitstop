@@ -12,4 +12,6 @@
 .state[data-status="approved"]{color:#8ff0dc}
 .state[data-status="rejected"]{color:#ffc4cc}
 details.paste summary{cursor:pointer;font-size:13px;color:#b3c2d2}
+.update{font-size:16px;line-height:1.6;color:#9df2b8;border-left:3px solid #2e7a4d;padding:4px 0 4px 14px;margin:0 0 18px}
+button.armed{outline:2px solid #f6d98a;outline-offset:2px}
 details.paste .actions{margin-top:4px}

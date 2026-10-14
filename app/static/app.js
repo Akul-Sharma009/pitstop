@@ -65,6 +65,7 @@ function load(data, demo = false) {
   result = data;
   isDemo = demo;
   for (const k of Object.keys(decided)) delete decided[k];
+  $('op-update').hidden = true;
   setStatus(data.status);
   setText('machine', data.machine_id);
   setText('part', data.part_number ? `${data.part_number} · ${data.part_name || ''}` : 'Not selected');
@@ -81,6 +82,7 @@ function load(data, demo = false) {
   setText('po-id', data.purchase_order_id || 'No purchase order');
   setText('booking-id', data.booking_id || 'No booking');
   for (const [kind, id] of [['po', data.purchase_order_id], ['booking', data.booking_id]]) {
+    $(`${kind}-approve`).parentElement.hidden = false;
     $(`${kind}-state`).textContent = id && !demo ? 'pending approval' : '';
     for (const action of ['approve', 'reject']) $(`${kind}-${action}`).disabled = !id || demo;
     if (id && !demo) refreshItem(kind, id);
@@ -123,10 +125,12 @@ function clearPlan(status) {
   $('trace').textContent = 'No tool calls yet.';
   $('warnings').replaceChildren(Object.assign(document.createElement('li'), { textContent: 'No plan loaded.' }));
   setText('op-summary', 'The summary appears here when the agent has finished.');
+  $('op-update').hidden = true;
   for (const kind of ['po', 'booking']) {
     $(`${kind}-state`).textContent = '';
     setText(`${kind}-id`, kind === 'po' ? 'No order' : 'No booking');
     for (const action of ['approve', 'reject']) $(`${kind}-${action}`).disabled = true;
+    $(`${kind}-approve`).parentElement.hidden = false;
   }
 }
 
@@ -138,7 +142,11 @@ function showDecision(kind, item) {
   $(`${kind}-state`).textContent = item.status.replace('_', ' ');
   $(`${kind}-state`).dataset.status = item.status;
   const open = item.status === 'pending_approval';
-  for (const action of ['approve', 'reject']) $(`${kind}-${action}`).disabled = !open;
+  for (const action of ['approve', 'reject']) {
+    $(`${kind}-${action}`).disabled = !open;
+    if (!open) disarm($(`${kind}-${action}`)); // a refresh while pending keeps a half-confirmed click
+  }
+  $(`${kind}-approve`).parentElement.hidden = !open; // a decided draft has no buttons left
   decided[kind] = item.status;
   // Once the manager has decided every draft of an awaiting plan, the status says so.
   const drafts = [['po', result?.purchase_order_id], ['booking', result?.booking_id]].filter(([, id]) => id).map(([k]) => decided[k]);
@@ -146,7 +154,30 @@ function showDecision(kind, item) {
     const outcome = drafts.includes('rejected') ? 'rejected' : 'approved';
     setStatus(outcome);
     setText('op-status', STATUS[outcome]);
+    // The agent wrote the summary before the manager decided: say what changed since.
+    $('op-update').hidden = false;
+    $('op-update').textContent = outcome === 'approved'
+      ? `Update: the manager has approved the plan. ${result.engineer_name || 'The engineer'} will do the repair `
+        + `${span(result.booking_start, result.booking_end)}${result.purchase_order_id ? ', after the new part arrives' : ''}.`
+      : 'Update: the manager rejected part of this plan, so the repair is not scheduled yet. The manager will arrange a new plan.';
   }
+}
+
+// Two clicks instead of a browser confirm() dialog, which automated browsers (and demo recordings) suppress.
+function arm(button, action) {
+  button.dataset.armed = '1';
+  button.dataset.label = button.textContent;
+  button.textContent = action === 'approve' ? 'Click to confirm' : 'Click to reject';
+  button.classList.add('armed');
+  button.timer = setTimeout(() => disarm(button), 5000);
+}
+
+function disarm(button) {
+  if (!button.dataset.armed) return;
+  clearTimeout(button.timer);
+  delete button.dataset.armed;
+  button.textContent = button.dataset.label;
+  button.classList.remove('armed');
 }
 
 async function refreshItem(kind, id) {
@@ -160,7 +191,13 @@ async function decision(kind, action) {
   const id = kind === 'po' ? result?.purchase_order_id : result?.booking_id;
   if (!id || isDemo) return;
   const label = kind === 'po' ? 'purchase order' : 'booking';
-  if (!window.confirm(`${action === 'approve' ? 'Approve' : 'Reject'} ${label} ${id}?`)) return;
+  const button = $(`${kind}-${action}`);
+  if (!button.dataset.armed) {
+    for (const other of document.querySelectorAll('.buttons button')) disarm(other);
+    arm(button, action);
+    return;
+  }
+  disarm(button);
   $(`${kind}-approve`).disabled = $(`${kind}-reject`).disabled = true;
   try {
     const response = await fetch(`/api/${API[kind]}/${encodeURIComponent(id)}/${action}`, { method: 'POST' });
@@ -181,7 +218,15 @@ async function poll() {
     const latest = await response.json();
     $('live').textContent = 'Live';
     const key = JSON.stringify([latest.received_at, latest.result?.status ?? null]);
-    if (key === seen) return;
+    if (key === seen) {
+      // Decisions made in another window show up here too.
+      if (result && !isDemo) {
+        for (const [kind, id] of [['po', result.purchase_order_id], ['booking', result.booking_id]]) {
+          if (id && (!decided[kind] || decided[kind] === 'pending_approval')) refreshItem(kind, id);
+        }
+      }
+      return;
+    }
     seen = key;
     showAlert(latest.alert);
     if (latest.result) load(latest.result);
