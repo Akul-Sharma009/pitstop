@@ -87,13 +87,13 @@ Risks:
 - **AMD credits pending** (account validation submitted 12 Oct; AMD says up to 3–5 business days, which could be after the deadline). Chase them: devcloudrequests@amd.com, the lablab.ai Discord, and a teammate application. Until then, develop against a stand-in (Ollama + the same model, 4-bit, on a Mac, see `docs/setup-guide.md`). The stand-in is never presented as the AMD part; the demo, the video and Evolus must use vLLM on AMD.
 - **Thin path by Wed 14 Oct** needs AMD, Evolus and the teammate's three parts. Fallback: run the whole flow on the stand-in model and fake factory systems by Wednesday, then swap in AMD and the real parts as they land.
 
-Plan to the deadline (agreed 14 Oct; one branch per item, Akul tests each before merge; fleet mode is cut first if time runs short):
+Plan to the deadline (agreed 14 Oct, re-dated the same evening: Wed 14 already covered Thu's items and built Fri's supplier choice; one branch per item, Akul tests each before merge; fleet mode is cut first if time runs short):
 
 | When | What |
 |---|---|
-| Thu 15 | Stress-test eval + fixes (`stress-tests`); replan on reject: the manager rejects with a reason, the agent replans (`replan-on-reject`) |
-| Fri 16 | Supplier choice: cheap/slow vs fast/dear, cheapest that arrives in time (`supplier-choice`); **AMD**: credits or pay by evening, `serve.sh`, eval on AMD, Evolus model switched; hosting set up (AMD instance or a small VM) |
-| Fri–Sat AM | Fleet mode: 3–5 machines in parallel on one MI300X (`fleet-mode`), tested on AMD Sat morning, **cut first if anything slips**; operator chat via the Evolus widget once hosted |
+| Wed 14 (done) | Thin path through Evolus; manual and screens; downtime saved; stress-test set (PR #6); replan on reject (PR #7); supplier choice built (`supplier-choice`, Akul verifies) |
+| Thu 15 | Merge supplier choice; fleet mode: 3–5 machines in parallel, shared engineers (`fleet-mode`), tested on the stand-in; hosting prepared (basic_auth on the screens, "model offline" notice); check AMD credits |
+| Fri 16 | **AMD**: credits or pay by evening; `serve.sh`, eval on AMD, Evolus model switched; fleet mode on the MI300X; hosting live; operator chat via the Evolus widget |
 | Sat 17, 12:00 | **Feature freeze** |
 | Sat 17 PM | Fresh-clone README test; demo video on AMD (if AMD failed: on the stand-in, said plainly); slides, cover image, descriptions and tags (Claude drafts, Akul reviews) |
 | Sun 18 AM | Final checks and upload; **submit by 12:00 SGT**. No building or recording on Sunday |
