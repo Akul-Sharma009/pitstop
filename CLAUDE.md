@@ -76,6 +76,7 @@ Status as of **Wed 14 Oct** (update this section at the end of each day).
 | Mock factory systems | Teammate, Akul | Done, on `master` (PR #2): `mocks/` service, seed `mocks/seed.json` (teammate's fictional suppliers); logs agent calls; enforces the repair window |
 | Manual, screens | Teammate, Akul | Done (PR #5): teammate's manual (7 failure types, cleaned of implementation notes) and screens, served by the `app` service at :8003. Verified live 14 Oct with Evolus: eval 6/6 on the new manual (~2.9 s per call), screens follow the run, manager approved both drafts |
 | Stress tests, replan on reject | Akul | Done (PRs #6, #7): 14 eval scenarios (3 demo, 9 stress, 2 replan), 28/28 on the Ollama stand-in; replan verified live in Evolus (manager rejects with a reason → new plan, standing order reused, enforced by the mocks' one-open-order rule) |
+| Supplier choice | Akul | 14 Oct: built on branch `supplier-choice` (not merged). Two suppliers per part (cheap/slow, fast/dear); the agent orders the cheapest that arrives in time. Verified live in Evolus: `urgent` → fast supplier SGD 145, `out_of_stock` → cheap SGD 89. Eval 29/30: `fast_supplier` is flaky (1/2, then 2/3): the model sometimes takes the cheap offer that arrives after the failure. Fix agreed, see "Next up" |
 
 Not yet proven: anything on AMD, and `docker compose up` on a clean machine.
 
@@ -97,6 +98,23 @@ Plan to the deadline (agreed 14 Oct, re-dated the same evening: Wed 14 already c
 | Sat 17, 12:00 | **Feature freeze** |
 | Sat 17 PM | Fresh-clone README test; demo video on AMD (if AMD failed: on the stand-in, said plainly); slides, cover image, descriptions and tags (Claude drafts, Akul reviews) |
 | Sun 18 AM | Final checks and upload; **submit by 12:00 SGT**. No building or recording on Sunday |
+
+Next up (agreed 14 Oct evening, do this first in a new session), on branch `supplier-choice`:
+1. Local agent (`agent/local_agent.py`, `_execute`): remember the offers from the last `get_supplier_quote`. Refuse `draft_purchase_order` when the chosen offer (named `supplier`, or the cheapest if none) is delivered after `alert.predicted_failure_at` while another offer arrives before it. Message names the in-time supplier, e.g. "ToolCo delivers 15 Oct 08:00 UTC, after the predicted failure (15 Oct 00:00 UTC). SpeedTool delivers 14 Oct 14:00 UTC: order from SpeedTool." If no offer is in time, let the order through (those scenarios escalate; ordering is optional).
+2. Mock calendar (`mocks/factory.py`, `_free`): 422 when `earliest_start >= latest_end` ("the window is empty: … if the part arrives after the predicted failure, choose a faster supplier or escalate"). Contract note.
+3. Guard (`agent/guard.py`): warn when the order's `expected_delivery` is after the predicted failure while the quote had an offer in time (covers Evolus).
+4. Prompt step 3 (`agent/prompts.py`): "An offer delivered after predicted_failure_at is useless: skip it even if it is cheapest."
+5. Tests for 1–3; a comment in `devtools/scenarios.py` that the eval's fake suppliers (ToolCo/SpeedTool, EUR) differ from the demo seed (teammate's suppliers, SGD) on purpose.
+6. Akul: `--scenario fast_supplier --repeat 5` (expect 5/5), then `--core`; then merge `supplier-choice` (PR #8), re-paste the Evolus instructions, update this status.
+
+Then: fleet mode (Thu, branch `fleet-mode`), hosting prep (basic_auth on the screens, "model offline" notice), AMD on Fri (pay by evening if no credits), operator chat via the Evolus widget (Fri), submission materials Sat PM (Claude drafts title, descriptions, tags, cover image, slides, video script).
+
+Operational notes (learned 13–14 Oct):
+- The Cloudflare quick tunnel dies after a while ("Tunnel not found", HTTP 530). After restarting `cloudflared tunnel --url http://localhost:8088`, update the new URL in Evolus: Your models (`…/v1`) and the Connector (`…/mcp`).
+- After a tool's arguments or description change, refresh the Connector's tool list in Evolus. After a `SYSTEM_PROMPT` change, re-paste `python scripts/evolus_text.py prompt` into the agent's instructions.
+- On the Mac, `.env` has `VLLM_BASE_URL=http://host.docker.internal:11434/v1` for Docker; run the eval with `VLLM_BASE_URL=http://localhost:11434/v1 python -m scripts.eval_agent`.
+- `docker compose up -d --build` doesn't rebuild the detector: use `docker compose run --build --rm detector …`.
+- Akul deletes merged branches on GitHub himself (the proxy blocks deletes from the cloud session). Merges: Claude opens a PR and merges it with the full head SHA once Akul's eval passes.
 
 Priority if time runs short: stress-test fixes → replan on reject → AMD → supplier choice → hosting → operator chat → fleet mode.
 
