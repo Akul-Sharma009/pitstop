@@ -1,7 +1,7 @@
 # Pitstop — AI maintenance agent for factories
 
 Hackathon entry for **AMD Developer Hackathon ACT III**, tracks **Intelligent Industry** + **Evolus** (partner track).
-Submission deadline: **Sun 18 Oct 2026, 18:00** (time zone to confirm). Thin path must run end to end by **Wed 14 Oct**; feature freeze **Sat 17 Oct** (after that, only bug fixes and the pitch). Record a rough backup demo video as soon as the thin path works.
+Submission deadline: **Sun 18 Oct 2026, 18:00 SGT** (10:00 UTC). Thin path must run end to end by **Wed 14 Oct**; feature freeze **Sat 17 Oct** (after that, only bug fixes and the pitch). Record a rough backup demo video as soon as the thin path works.
 
 ## The project
 
@@ -78,7 +78,7 @@ Status as of **Wed 14 Oct** (update this section at the end of each day).
 
 Not yet proven: anything on AMD, and `docker compose up` on a clean machine.
 
-Open decisions: hosting for the live URL (recommended: one small VM, or the AMD instance while it's on, with `docker compose --profile public`); the deadline's time zone and the lablab submission checklist.
+Open decisions: hosting for the live URL (recommended: one small VM, or the AMD instance while it's on, with `docker compose --profile public`); the lablab submission checklist.
 
 Risks:
 - **AMD credits pending** (account validation submitted 12 Oct; AMD says up to 3–5 business days, which could be after the deadline). Chase them: devcloudrequests@amd.com, the lablab.ai Discord, and a teammate application. Until then, develop against a stand-in (Ollama + the same model, 4-bit, on a Mac, see `docs/setup-guide.md`). The stand-in is never presented as the AMD part; the demo, the video and Evolus must use vLLM on AMD.
@@ -93,7 +93,7 @@ Plan to the deadline (agreed 14 Oct; one branch per item, Akul tests each before
 | Fri–Sat | Fleet mode: 3–5 machines in parallel on one MI300X, shared engineers (`fleet-mode`), tested on AMD Sat |
 | Sat 17 AM | Hosting (basic_auth on the screens, `--profile public`, "model offline" notice), then operator chat via the Evolus widget |
 | Sat 17 PM | **Feature freeze.** Fresh-clone test of the README, demo video on AMD, slides |
-| Sun 18 | Submit by noon; confirm the deadline's time zone and the lablab checklist |
+| Sun 18 | Submit by noon SGT (deadline 18:00 SGT) |
 
 ## Work split
 
