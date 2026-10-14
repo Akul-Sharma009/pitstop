@@ -81,6 +81,7 @@ docker compose up --build    # mock factory systems + MCP server + agent
 
 - Mock factory systems: `http://localhost:8000` (seed data in `mocks/seed.json`)
 - MCP server: `http://localhost:8001/mcp` (streamable HTTP; send `Authorization: Bearer $MCP_API_TOKEN` if set)
+- **Supplier choice:** the part has two suppliers, cheap but slow (SGD 89, 24 h) and fast but dearer (SGD 145, 6 h). The agent orders from the cheapest one that still arrives in time to repair before the failure, and pays for speed only when it must (`urgent` above).
 - **Screens: `http://localhost:8003`**: manager approval and operator summary (by @pradeepshenram). They follow the latest alert by themselves; the manager approves or rejects each draft there. **Reject with a reason** ("Priya is on leave on Thursday") and the agent makes a new plan that respects it, keeping the parts of the old plan that still stand.
 - Agent service: `http://localhost:8002/docs`
 
@@ -90,6 +91,7 @@ Replay the machine and let the detector send its alert to the agent (needs the m
 
 ```bash
 docker compose run --build --rm detector --scenario out_of_stock   # or in_stock, no_engineer; --dry-run prints the alert only
+docker compose run --build --rm -e CUTTING_MIN_PER_DAY=60 detector --scenario urgent   # failure ~16 h away: only the fast supplier is in time
 ```
 
 `--scenario` resets the mock factory first: engineer slots are set relative to that moment. `--build` matters: `docker compose up --build` doesn't rebuild the detector, which only runs on demand.

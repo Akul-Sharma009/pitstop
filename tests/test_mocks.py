@@ -63,8 +63,9 @@ def test_skill_filter_and_quote():
     later = (START + timedelta(days=3)).isoformat()
     mechanical = client.find_free_engineers("mechanical", START.isoformat(), later, 30)["slots"]
     assert {s["name"] for s in mechanical} == {"Daniel Tan"}
-    quote = client.get_supplier_quote("EM-1004")
-    assert quote["lead_time_hours"] == 24 and quote["currency"] == "SGD"
+    offers = client.get_supplier_quote("EM-1004")["offers"]
+    assert [(o["unit_price"], o["lead_time_hours"]) for o in offers] == [(89.0, 24), (145.0, 6)]  # cheapest first
+    assert offers[1]["expected_delivery"] == (START + timedelta(hours=7)).isoformat()  # +6 h, rounded up to the hour
     assert "error" in client.draft_purchase_order("T-789", 1, "M-01", "x")
 
 
@@ -137,3 +138,31 @@ def test_one_open_order_per_part_and_machine():
     http = httpx.Client(base_url="http://mocks", transport=httpx.MockTransport(factory.handle))
     http.post(f"/supplier/purchase-orders/{first['po_id']}/reject")
     assert "error" not in client.draft_purchase_order("EM-1004", 1, "M-01", "tool wear")  # the old one was rejected
+
+
+
+def test_order_from_a_chosen_supplier():
+    _, client = demo("urgent")
+    fast = client.draft_purchase_order("EM-1004", 1, "M-01", "tool wear", supplier="Example Tooling Partner (fictional)")
+    assert fast["total_price"] == 145.0
+    assert fast["expected_delivery"] == (START + timedelta(hours=7)).isoformat()  # 09:20 + 6 h, rounded up to 16:00
+    assert "does not sell" in client.draft_purchase_order("EM-1006", 1, "M-01", "x", supplier="Example Tooling Partner (fictional)")["error"]
+
+
+def test_urgent_demo_needs_the_fast_supplier():
+    """Detector with CUTTING_MIN_PER_DAY=60 and ~16 cutting minutes left: failure about 16 h after the alert."""
+    failure = (DETECTED + timedelta(hours=16)).isoformat()
+    _, client = demo("urgent")
+    offers = client.get_supplier_quote("EM-1004")["offers"]
+    cheap, fast = offers[0]["expected_delivery"], offers[1]["expected_delivery"]
+    assert cheap > failure  # too late
+    assert client.find_free_engineers("cnc_tooling", fast, failure, 30)["slots"]
+
+
+def test_empty_search_window_is_refused():
+    """Searching from a delivery after the predicted failure: say why, instead of an empty list."""
+    _, client = demo("urgent")
+    cheap = client.get_supplier_quote("EM-1004")["offers"][0]["expected_delivery"]
+    failure = (DETECTED + timedelta(hours=16)).isoformat()
+    refused = client.find_free_engineers("cnc_tooling", cheap, failure, 30)
+    assert refused["error"].startswith("422: the window is empty") and "faster supplier" in refused["error"]

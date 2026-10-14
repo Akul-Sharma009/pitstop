@@ -66,6 +66,8 @@ class LocalAgent:
         # expected_delivery of the order the repair waits for: a standing one, or the one drafted in this run
         self.delivery: str | None = standing.get("expected_delivery") if standing else None
         self.out_of_stock: str | None = None  # a part check_inventory found with 0 on hand
+        self.failure_at = utc(alert.predicted_failure_at)
+        self.offers: dict[str, list[dict[str, Any]]] = {}  # part → offers from its last get_supplier_quote
         self.manual_parts = set()
         self.transcript = []
         nudged = False
@@ -143,13 +145,15 @@ class LocalAgent:
             part = str(arguments.get("part_number", ""))
             if part not in self.manual_parts:
                 return {"error": f"Part {part} is not in the machine manual. Search the manual and use the part number it gives."}
-        refused = self._no_part(name) or self._before_delivery(name, arguments)
+        refused = self._no_part(name) or self._before_delivery(name, arguments) or self._too_late(name, arguments)
         if refused:
             return {"error": refused}
         result = call_tool(self.factory, name, arguments, now=self.now)
         ok = isinstance(result, dict) and "error" not in result
         if name == "draft_purchase_order" and ok:
             self.delivery = result.get("expected_delivery")
+        if name == "get_supplier_quote" and ok:
+            self.offers[result.get("part_number")] = result.get("offers", [])
         if name == "check_inventory" and ok:
             in_stock = result.get("quantity_on_hand", 0) > 0
             self.out_of_stock = None if in_stock else result.get("part_number")
@@ -161,6 +165,23 @@ class LocalAgent:
             return None
         return (f"{self.out_of_stock} is not in stock and not on order, so no repair can be booked. Order it if that "
                 "is allowed; otherwise escalate to the manager and say why.")
+
+    def _too_late(self, name: str, arguments: dict[str, Any]) -> str | None:
+        """An order delivered after the predicted failure can't prevent it: refuse it while another offer is in
+        time. If no offer is in time, let it through (the plan escalates; the order is the manager's call)."""
+        offers = self.offers.get(str(arguments.get("part_number"))) if name == "draft_purchase_order" else None
+        if not offers or self.failure_at is None:
+            return None
+        wanted = arguments.get("supplier")
+        chosen = next((o for o in offers if o.get("supplier") == wanted), None) if wanted else offers[0]
+        delivery = utc(chosen.get("expected_delivery")) if chosen else None
+        in_time = [o for o in offers if (utc(o.get("expected_delivery")) or self.failure_at) < self.failure_at]
+        if delivery is None or delivery < self.failure_at or not in_time:
+            return None
+        best = in_time[0]  # offers come cheapest first
+        return (f"{chosen['supplier']} delivers {readable(delivery)}, after the predicted failure "
+                f"({readable(self.failure_at)}), so the repair could not happen in time. {best['supplier']} delivers "
+                f"{readable(best['expected_delivery'])}: order from {best['supplier']}.")
 
     def _before_delivery(self, name: str, arguments: dict[str, Any]) -> str | None:
         """The repair can't start before the ordered part arrives: refuse, so the model searches again."""

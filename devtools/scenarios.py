@@ -19,11 +19,15 @@ NOW = datetime.fromisoformat("2026-10-14T08:00:00+00:00")
 FAILURE = datetime.fromisoformat("2026-10-16T08:00:00+00:00")
 READINGS = {"air_temperature_k": 298.9, "process_temperature_k": 309.1, "rotational_speed_rpm": 1420, "torque_nm": 46.3}
 
-# Parts: (name, lead time in hours). Engineers: id → (name, skills).
+# Parts: name and supplier offers (supplier, unit price, lead time in hours), cheapest first.
+# The suppliers (ToolCo, SpeedTool, EUR) differ from the demo seed (mocks/seed.json: the teammate's fictional
+# suppliers, SGD) on purpose: the eval must not pass because the prompt was tuned on the demo's names.
+# Engineers: id → (name, skills).
+CHEAP, FAST = "ToolCo", "SpeedTool"
 PARTS = {
-    "EM-1004": ("Carbide end mill 10 mm 4-flute", 24),
-    "EM-1006": ("Carbide end mill 6 mm 2-flute (finishing)", 24),
-    "CP-220": ("Coolant pump", 72),
+    "EM-1004": ("Carbide end mill 10 mm 4-flute", [(CHEAP, 89.0, 24), (FAST, 145.0, 6)]),
+    "EM-1006": ("Carbide end mill 6 mm 2-flute (finishing)", [(CHEAP, 64.0, 24)]),
+    "CP-220": ("Coolant pump", [(CHEAP, 420.0, 72)]),
 }
 ENGINEERS = {"E-01": ("Priya Nair", ["cnc_tooling"]), "E-02": ("Daniel Tan", ["mechanical"]),
              "E-03": ("Wei Ling Ho", ["cnc_tooling"])}
@@ -52,6 +56,7 @@ class Scenario:
     # What a correct agent does:
     part: str | None = PART  # None: the manual lists no part, so nothing may be ordered
     order: bool | None = False  # True: must order `part`; None: ordering is optional (it can't help in time)
+    supplier: str = CHEAP  # the offer a correct agent orders from: the cheapest that arrives in time
     booking: tuple[str, float] | None = None  # (engineer, slot hours after NOW) to book; None: must escalate
     search: tuple[str, int] | None = ("cnc_tooling", 30)  # (skill, repair minutes) the engineer search must use
     search_required: bool = True  # False: escalating without any engineer search is fine
@@ -63,8 +68,11 @@ class Scenario:
 
     @property
     def delivery(self) -> datetime | None:
-        """When the part arrives if ordered at NOW."""
-        return NOW + timedelta(hours=PARTS[self.part][1]) if self.part else None
+        """When the part arrives if ordered at NOW from the expected supplier."""
+        if not self.part:
+            return None
+        lead = next(hours for name, _, hours in PARTS[self.part][1] if name == self.supplier)
+        return NOW + timedelta(hours=lead)
 
     def alert(self) -> Alert:
         wear, remaining = self.tool_wear or (None, None)
@@ -80,7 +88,7 @@ SCENARIOS = {s.name: s for s in [
     Scenario("in_stock", "Part in stock: no order, book the earliest slot.",
              stock={PART: 2, "EM-1006": 5, "CP-220": 1}, slots={"E-01": [7, 30]}, booking=("E-01", 7)),
     Scenario("no_engineer", "No engineer free between delivery and failure: order, then escalate.",
-             stock={"EM-1006": 5, "CP-220": 1}, slots={"E-01": [7, 52]}, order=True),
+             stock={"EM-1006": 5, "CP-220": 1}, slots={"E-01": [3, 52]}, order=True),
     # Stress scenarios: situations the prompt was not tuned on.
     Scenario("finishing_tool", "Look-alike part: the finishing tool is EM-1006, not EM-1004 (both in stock).",
              failure_type="finishing_tool", tool_wear=None, stock={PART: 2, "EM-1006": 3}, slots={"E-01": [7, 30]},
@@ -102,8 +110,11 @@ SCENARIOS = {s.name: s for s in [
              part=None, search=None, search_required=False),
     Scenario("failure_imminent", "Failure in 3 h, part in stock, but the first slot is in 7 h: escalate.",
              failure_in_h=3, tool_wear=(207, 3), stock={PART: 2}, slots={"E-01": [7, 30]}),
-    Scenario("part_too_late", "Failure in 20 h, before the part can arrive (24 h): escalate.",
-             failure_in_h=20, tool_wear=(195, 15), slots={"E-01": [7, 30]}, order=None, search_required=False),
+    Scenario("part_too_late", "Failure in 5 h, before even the fast supplier can deliver (6 h): escalate.",
+             failure_in_h=5, tool_wear=(205, 4), slots={"E-01": [7, 30]}, order=None, search_required=False),
+    Scenario("fast_supplier", "Failure in 16 h: the cheap supplier (24 h) is too late, so pay for the fast one (6 h).",
+             failure_in_h=16, tool_wear=(200, 13), slots={"E-01": [7, 30]}, order=True, supplier=FAST,
+             booking=("E-01", 7)),
     Scenario("detector_code", "The alert uses the AI4I code TWF instead of tool_wear: same plan as out_of_stock.",
              failure_type="TWF", stock={"EM-1006": 5, "CP-220": 1}, slots={"E-01": [7, 30]}, order=True,
              booking=("E-01", 30)),
@@ -121,14 +132,14 @@ CORE = ["out_of_stock", "in_stock", "no_engineer"]
 
 def seed() -> dict:
     """Mock factory seed data for every scenario (mocks/factory.py format)."""
-    supplier = {"supplier": "ToolCo", "currency": "EUR"}
     return {
         "note": "Test data pinned to NOW; see devtools/scenarios.py.",
         "parts": [
             {"part_number": number, "name": name, "location": "B-3",
              "stock": {s.name: s.stock.get(number, 0) for s in SCENARIOS.values()},
-             "supplier": {**supplier, "unit_price": 420.0 if number == "CP-220" else 89.0, "lead_time_hours": lead}}
-            for number, (name, lead) in PARTS.items()
+             "suppliers": [{"supplier": supplier, "unit_price": price, "currency": "EUR", "lead_time_hours": lead}
+                           for supplier, price, lead in offers]}
+            for number, (name, offers) in PARTS.items()
         ],
         "engineers": [{"engineer_id": eid, "name": name, "skills": skills} for eid, (name, skills) in ENGINEERS.items()],
         "slots": {s.name: [{"engineer_id": eid, "hours_after_reset": h} for eid, hours in s.slots.items() for h in hours]

@@ -1,7 +1,7 @@
 # Pitstop — AI maintenance agent for factories
 
 Hackathon entry for **AMD Developer Hackathon ACT III**, tracks **Intelligent Industry** + **Evolus** (partner track).
-Submission deadline: **Sun 18 Oct 2026, 18:00 SGT** (the event itself ends 23:00 SGT). Our target: **submitted by 12:00 SGT Sunday**; Akul's exams start 19 Oct, so there is no time for anything after that. Thin path must run end to end by **Wed 14 Oct**; feature freeze **Sat 17 Oct, 12:00 SGT** (after that, only bug fixes and the pitch). Record a rough backup demo video as soon as the thin path works.
+Submission deadline: **Sun 18 Oct 2026, 18:00 SGT** (the event itself ends 23:00 SGT). Our target: **submitted by 12:00 SGT Sunday**; Akul's exams start 19 Oct, so there is no time for anything after that. Thin path must run end to end by **Wed 14 Oct**; feature freeze **Sat 17 Oct, 12:00 SGT** (after that, only bug fixes and the pitch). No separate backup video: if AMD fails, the demo video is recorded on the stand-in in the AMD video slot (Sat PM), with an honest note.
 
 ## The project
 
@@ -66,7 +66,7 @@ Status as of **Wed 14 Oct** (update this section at the end of each day).
 
 | Part | Owner | Status |
 |---|---|---|
-| Repo, Docker, README, licence, contracts | Akul | Done, on `master` (PRs #1–#7) |
+| Repo, Docker, README, licence, contracts | Akul | Done, on `master` (PRs #1–#8) |
 | Agent service + guardrails | Akul | Done: 6/6 on `scripts.eval_agent` (Ollama stand-in, ~2 s per model call) |
 | MCP server | Akul | Done; connected to Evolus as a manual Connector (5 tools) through a Cloudflare tunnel |
 | Model choice | Akul | Qwen3-30B-A3B-Instruct-2507 (see Architecture) |
@@ -75,7 +75,8 @@ Status as of **Wed 14 Oct** (update this section at the end of each day).
 | Failure model + replay | Teammate, Akul | Done, on `master` (PR #2): teammate's model rebuilt as `detector/`; one machine, Alert contract, remaining cutting time from the model. Real AI4I: 7/9 caught, 113 false alarms; alert at wear 160 with 40 cutting min left |
 | Mock factory systems | Teammate, Akul | Done, on `master` (PR #2): `mocks/` service, seed `mocks/seed.json` (teammate's fictional suppliers); logs agent calls; enforces the repair window |
 | Manual, screens | Teammate, Akul | Done (PR #5): teammate's manual (7 failure types, cleaned of implementation notes) and screens, served by the `app` service at :8003. Verified live 14 Oct with Evolus: eval 6/6 on the new manual (~2.9 s per call), screens follow the run, manager approved both drafts |
-| Stress tests, replan on reject | Akul | Done (PRs #6, #7): 14 eval scenarios (3 demo, 9 stress, 2 replan), 28/28 on the Ollama stand-in; replan verified live in Evolus (manager rejects with a reason → new plan, standing order reused, enforced by the mocks' one-open-order rule) |
+| Stress tests, replan on reject | Akul | Done (PRs #6, #7): 14 eval scenarios (3 demo, 9 stress, 2 replan; 15 with `fast_supplier`), 28/28 on the Ollama stand-in; replan verified live in Evolus (manager rejects with a reason → new plan, standing order reused, enforced by the mocks' one-open-order rule) |
+| Supplier choice | Akul | Done (PR #8): two suppliers per part (cheap/slow, fast/dear); the agent orders the cheapest offer that arrives in time. Verified live in Evolus: `urgent` → fast supplier SGD 145, `out_of_stock` → cheap SGD 89. A late offer is refused by the local agent, the mock calendar rejects an empty search window (422), and the guard warns (covers Evolus). Eval on the stand-in: `fast_supplier` 5/5, core 6/6; 112 tests. Evolus instructions re-pasted for this prompt |
 
 Not yet proven: anything on AMD, and `docker compose up` on a clean machine.
 
@@ -87,16 +88,25 @@ Risks:
 - **AMD credits pending** (account validation submitted 12 Oct; AMD says up to 3–5 business days, which could be after the deadline). Chase them: devcloudrequests@amd.com, the lablab.ai Discord, and a teammate application. Until then, develop against a stand-in (Ollama + the same model, 4-bit, on a Mac, see `docs/setup-guide.md`). The stand-in is never presented as the AMD part; the demo, the video and Evolus must use vLLM on AMD.
 - **Thin path by Wed 14 Oct** needs AMD, Evolus and the teammate's three parts. Fallback: run the whole flow on the stand-in model and fake factory systems by Wednesday, then swap in AMD and the real parts as they land.
 
-Plan to the deadline (agreed 14 Oct; one branch per item, Akul tests each before merge; fleet mode is cut first if time runs short):
+Plan to the deadline (agreed 14 Oct, re-dated the same evening: Wed 14 already covered Thu's items and built Fri's supplier choice; one branch per item, Akul tests each before merge; fleet mode is cut first if time runs short):
 
 | When | What |
 |---|---|
-| Thu 15 | Stress-test eval + fixes (`stress-tests`); replan on reject: the manager rejects with a reason, the agent replans (`replan-on-reject`); rough backup video |
-| Fri 16 | Supplier choice: cheap/slow vs fast/dear, cheapest that arrives in time (`supplier-choice`); **AMD**: credits or pay by evening, `serve.sh`, eval on AMD, Evolus model switched; hosting set up (AMD instance or a small VM) |
-| Fri–Sat AM | Fleet mode: 3–5 machines in parallel on one MI300X (`fleet-mode`), tested on AMD Sat morning, **cut first if anything slips**; operator chat via the Evolus widget once hosted |
+| Wed 14 (done) | Thin path through Evolus; manual and screens; downtime saved; stress-test set (PR #6); replan on reject (PR #7); supplier choice (PR #8) |
+| Thu 15 | Fleet mode: 3–5 machines in parallel, shared engineers (`fleet-mode`), tested on the stand-in; hosting prepared (basic_auth on the screens, "model offline" notice); check AMD credits |
+| Fri 16 | **AMD**: credits or pay by evening; `serve.sh`, eval on AMD, Evolus model switched; fleet mode on the MI300X; hosting live; operator chat via the Evolus widget |
 | Sat 17, 12:00 | **Feature freeze** |
-| Sat 17 PM | Fresh-clone README test; demo video on AMD; slides, cover image, descriptions and tags (Claude drafts, Akul reviews) |
-| Sun 18 AM | Final checks and upload; **submit by 12:00 SGT**. No building or recording on Sunday: if the AMD video isn't done by Sat evening, submit the backup video plus AMD screenshots with an honest note |
+| Sat 17 PM | Fresh-clone README test; demo video on AMD (if AMD failed: on the stand-in, said plainly); slides, cover image, descriptions and tags (Claude drafts, Akul reviews) |
+| Sun 18 AM | Final checks and upload; **submit by 12:00 SGT**. No building or recording on Sunday |
+
+Next up: fleet mode (Thu, branch `fleet-mode`): 3–5 machines in parallel sharing the engineers, tested on the stand-in; agree the design with Akul before building. Then hosting prep (basic_auth on the screens, "model offline" notice), AMD on Fri (pay by evening if no credits), operator chat via the Evolus widget (Fri), submission materials Sat PM (Claude drafts title, descriptions, tags, cover image, slides, video script).
+
+Operational notes (learned 13–14 Oct):
+- The Cloudflare quick tunnel dies after a while ("Tunnel not found", HTTP 530). After restarting `cloudflared tunnel --url http://localhost:8088`, update the new URL in Evolus: Your models (`…/v1`) and the Connector (`…/mcp`).
+- After a tool's arguments or description change, refresh the Connector's tool list in Evolus. After a `SYSTEM_PROMPT` change, re-paste `python scripts/evolus_text.py prompt` into the agent's instructions.
+- On the Mac, `.env` has `VLLM_BASE_URL=http://host.docker.internal:11434/v1` for Docker; run the eval with `VLLM_BASE_URL=http://localhost:11434/v1 python -m scripts.eval_agent`.
+- `docker compose up -d --build` doesn't rebuild the detector: use `docker compose run --build --rm detector …`.
+- Akul deletes merged branches on GitHub himself (the proxy blocks deletes from the cloud session). Merges: Claude opens a PR and merges it with the full head SHA once Akul's eval passes.
 
 Priority if time runs short: stress-test fixes → replan on reject → AMD → supplier choice → hosting → operator chat → fleet mode.
 
@@ -120,7 +130,7 @@ Priority if time runs short: stress-test fixes → replan on reject → AMD → 
 - **A README that runs** — its commands must work from a clean clone; re-test before submission.
 - **Environment variables for all keys and endpoints** (vLLM, Evolus, MCP token, etc.). `.env.example` holds placeholders; `.env` is gitignored. **Never commit secrets** — check the diff before every push.
 - Tests with `pytest`; tests must not need the GPU, Evolus or network (use the fakes in `devtools/fakes.py`, which also implement the mock API contract).
-- After changing the prompt, tools or model, run `python -m scripts.eval_agent` against the real vLLM endpoint (14 scenarios from `devtools/scenarios.py`: 3 demo, 9 stress, 2 replan; checks what the agent actually did). New behaviour gets a new scenario there.
+- After changing the prompt, tools or model, run `python -m scripts.eval_agent` against the real vLLM endpoint (15 scenarios from `devtools/scenarios.py`: 3 demo, 10 stress, 2 replan; checks what the agent actually did). New behaviour gets a new scenario there.
 - Evolus setup steps and open questions: `docs/evolus-setup.md`.
 - **Branch names**: short and descriptive so a third person understands them (e.g. `agent-mcp-server`, `thin-path`, `evolus-integration`). No `claude/` prefix and no random auto-generated names.
 - Public GitHub repo, MIT licence, original work.

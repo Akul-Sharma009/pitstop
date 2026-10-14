@@ -59,6 +59,9 @@ def check(name: str, result: AgentResult, factory: FakeFactory) -> list[str]:
         problems.append(f"drafted {len(orders)} orders and {len(bookings)} bookings, expected at most 1 each")
     if scenario.order is True and len(orders) != 1:
         problems.append(f"expected 1 purchase order, got {len(orders)}")
+    if scenario.order is True and len(orders) == 1 and orders[0].get("supplier") != scenario.supplier:
+        problems.append(f"ordered from {orders[0].get('supplier')}, expected {scenario.supplier} "
+                        "(the cheapest supplier that delivers in time)")
     if scenario.order is False and orders:
         problems.append("ordered a part that is in stock" if scenario.part else "ordered a part the manual doesn't list")
 

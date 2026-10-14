@@ -17,6 +17,48 @@ def _in_stock(result: AgentResult) -> bool:
                and c.result.get("quantity_on_hand", 0) > 0 for c in result.trace)
 
 
+def _offers(result: AgentResult, order: dict) -> tuple[list[dict], dict | None]:
+    """The offers from the last quote for the plan's part, and the one the order was placed with."""
+    quote = next((c.result for c in reversed(result.trace) if c.tool == "get_supplier_quote" and _ok(c)
+                  and c.result.get("part_number") == result.part_number), None)
+    offers = (quote or {}).get("offers", [])
+    return offers, next((o for o in offers if o.get("supplier") == order.get("supplier")), None)
+
+
+def _delivery(offer: dict) -> datetime | None:
+    return _aware(datetime.fromisoformat(offer["expected_delivery"])) if offer.get("expected_delivery") else None
+
+
+def _late_supplier(result: AgentResult, order: dict, alert: Alert) -> list[str]:
+    """An order delivered after the predicted failure can't prevent it, if another offer was in time."""
+    failure = _aware(alert.predicted_failure_at)
+    delivery = _delivery({"expected_delivery": order.get("expected_delivery")})
+    if delivery is None or delivery < failure:
+        return []
+    offers, _ = _offers(result, order)
+    in_time = [o for o in offers if (_delivery(o) or failure) < failure]
+    if not in_time:
+        return []
+    best = in_time[0]  # offers come cheapest first
+    return [f"{order.get('po_id')} from {order.get('supplier')} arrives after the predicted failure, "
+            f"but {best['supplier']} ({best['currency']} {best['unit_price']:g}) would have arrived in time."]
+
+
+def _dearer_supplier(result: AgentResult, order: dict) -> list[str]:
+    """The order should come from the cheapest offer that arrives before the booked repair."""
+    offers, chosen = _offers(result, order)
+    if not chosen:
+        return []
+    start = _aware(result.booking_start)
+    cheaper = [o for o in offers if o.get("unit_price", 0) < chosen.get("unit_price", 0)
+               and o.get("expected_delivery") and _delivery(o) <= start]
+    if not cheaper:
+        return []
+    best = min(cheaper, key=lambda o: o["unit_price"])
+    return [f"{order.get('part_number')} was ordered from {chosen['supplier']} at {chosen['currency']} {chosen['unit_price']:g}, "
+            f"but {best['supplier']} ({best['currency']} {best['unit_price']:g}) would have arrived in time for the booked repair."]
+
+
 def _seen_in_trace(value: str, result: AgentResult, tools: set[str]) -> bool:
     return any(call.tool in tools and value in json.dumps(call.result, default=str) for call in result.trace)
 
@@ -50,6 +92,10 @@ def check(result: AgentResult, alert: Alert) -> list[str]:
         if len(orders) > 1:
             warnings.append(f"{len(orders)} orders were drafted for {result.part_number}: "
                             f"{', '.join(o.get('po_id', '?') for o in orders)}. Only one is needed.")
+        if orders:
+            warnings += _late_supplier(result, orders[-1], alert)
+        if orders and result.booking_start:
+            warnings += _dearer_supplier(result, orders[-1])
         if result.booking_id and result.part_number and not orders and not _in_stock(result):
             warnings.append(f"A repair is booked, but {result.part_number} is neither in stock nor on order.")
 

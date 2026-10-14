@@ -42,8 +42,11 @@ def get_supplier_quote(part_number: str) -> dict[str, Any]:
 
 
 @mcp.tool(description=DESCRIPTIONS["draft_purchase_order"])
-def draft_purchase_order(part_number: str, quantity: int, machine_id: str, reason: str) -> dict[str, Any]:
-    arguments = {"part_number": part_number, "quantity": quantity, "machine_id": machine_id, "reason": reason}
+def draft_purchase_order(
+    part_number: str, quantity: int, machine_id: str, reason: str, supplier: str | None = None
+) -> dict[str, Any]:
+    arguments = {"part_number": part_number, "quantity": quantity, "machine_id": machine_id, "reason": reason,
+                 "supplier": supplier}
     return call_tool(factory, "draft_purchase_order", arguments)
 
 

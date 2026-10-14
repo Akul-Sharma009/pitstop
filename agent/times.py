@@ -49,6 +49,8 @@ def label_times(result: Any, now: Any) -> Any:
             result[f"{key}_when"] = when(result[key], now)
     if isinstance(result.get("slots"), list):
         result["slots"] = [{**slot, "slot_start_when": when(slot.get("slot_start"), now)} for slot in result["slots"]]
+    if isinstance(result.get("offers"), list):
+        result["offers"] = [{**o, "expected_delivery_when": when(o.get("expected_delivery"), now)} for o in result["offers"]]
     return result
 
 

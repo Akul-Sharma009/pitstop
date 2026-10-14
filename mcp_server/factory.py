@@ -39,8 +39,12 @@ class FactoryClient:
     def get_supplier_quote(self, part_number: str) -> dict[str, Any]:
         return self._call("GET", f"/supplier/parts/{part_number}")
 
-    def draft_purchase_order(self, part_number: str, quantity: int, machine_id: str, reason: str) -> dict[str, Any]:
+    def draft_purchase_order(
+        self, part_number: str, quantity: int, machine_id: str, reason: str, supplier: str | None = None
+    ) -> dict[str, Any]:
         body = {"part_number": part_number, "quantity": quantity, "machine_id": machine_id, "reason": reason}
+        if supplier:
+            body["supplier"] = supplier
         return self._call("POST", "/supplier/purchase-orders", json=body)
 
     def find_free_engineers(
