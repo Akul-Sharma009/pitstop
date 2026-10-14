@@ -25,6 +25,18 @@ class ToolCall(BaseModel):
     result: Any
 
 
+class Downtime(BaseModel):
+    """Downtime saved by the planned repair vs an unplanned breakdown (stated assumptions, see contracts)."""
+
+    planned_min: float
+    unplanned_h: float
+    saved_h: float
+    cost_per_h: float
+    currency: str
+    money_saved: float
+    assumptions: str
+
+
 class AgentResult(BaseModel):
     status: Literal["awaiting_approval", "escalated", "failed"]
     machine_id: str
@@ -41,6 +53,7 @@ class AgentResult(BaseModel):
     booking_end: datetime | None = None
     escalation_reason: str | None = None
     operator_summary: str = ""
+    downtime: Downtime | None = None
     warnings: list[str] = Field(default_factory=list)
     trace: list[ToolCall] = Field(default_factory=list)
     backend: str = ""

@@ -4,7 +4,7 @@ An AI maintenance agent for factories. A failure model spots a CNC milling machi
 
 The agent's language model is an open model served with **vLLM on AMD Developer Cloud** (AMD Instinct MI300X, ROCm). Built for the AMD Developer Hackathon ACT III (Intelligent Industry + Evolus tracks).
 
-> Status (13 Oct): work in progress. The agent service and the MCP server pass all three demo scenarios (part out of stock, part in stock, no engineer free) with the chosen model, Qwen3-30B-A3B-Instruct-2507, run locally as a stand-in while AMD Developer Cloud credits are pending. The failure model replay (`detector/`) and the mock factory systems (`mocks/`) are built; the replay still needs a run on the real AI4I data. Still to come: the model on AMD, the Evolus integration, the machine manual and the screens. Interfaces: [`docs/contracts.md`](docs/contracts.md).
+> Status (14 Oct): work in progress. The whole path runs end to end: the detector replays M-01 and sends an alert; the agent, in Evolus or as our local loop, reads the manual, checks stock, drafts the order and books an engineer after the part arrives; the plan comes back checked, with the downtime saved. All three demo scenarios pass through Evolus. For now the model is Qwen3-30B-A3B-Instruct-2507 on a local stand-in while AMD Developer Cloud credits are pending. Still to come: the model on AMD, the full machine manual and the approval and operator screens. Interfaces: [`docs/contracts.md`](docs/contracts.md).
 
 ## Architecture
 
@@ -83,7 +83,7 @@ docker compose up --build    # mock factory systems + MCP server + agent
 - MCP server: `http://localhost:8001/mcp` (streamable HTTP; send `Authorization: Bearer $MCP_API_TOKEN` if set)
 - Agent service: `http://localhost:8002/docs`
 
-To expose the MCP server over HTTPS for Evolus, see [`docs/evolus-setup.md`](docs/evolus-setup.md).
+**Run the agent in Evolus** (`AGENT_BACKEND=evolus`): the Evolus agent uses our model, the manual as its knowledge library and our MCP server as a Connector. Setup, the tunnel for development and the HTTPS host for the demo: [`docs/evolus-setup.md`](docs/evolus-setup.md).
 
 Replay the machine and let the detector send its alert to the agent (needs the model; first run downloads AI4I from UCI into `data/`):
 
@@ -104,7 +104,9 @@ curl -s localhost:8002/incidents -H 'Content-Type: application/json' -d '{
 }'
 ```
 
-The reply is the plan (`docs/contracts.md`, AgentResult): diagnosis, part, draft purchase order and booking (both `pending_approval`), operator summary, guardrail warnings and the trace of tool calls.
+The reply is the plan (`docs/contracts.md`, AgentResult): diagnosis, part, draft purchase order and booking (both `pending_approval`), operator summary, downtime saved, guardrail warnings and the trace of tool calls.
+
+**Downtime saved** compares the booked tool swap (30 minutes, from the manual) with an unplanned breakdown, using two stated assumptions you can change in `.env`: a breakdown stops the machine for about 8 hours (`UNPLANNED_DOWNTIME_H`), and downtime costs about 500 SGD per hour (`DOWNTIME_COST_PER_H`). With those, one planned swap saves about 7.5 hours and 3,750 SGD.
 
 ## Tests
 

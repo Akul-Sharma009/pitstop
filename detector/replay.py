@@ -133,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
     result = httpx.post(url, json=alert, timeout=600).raise_for_status().json()
     print(json.dumps({k: result.get(k) for k in ("status", "part_number", "repair_steps", "purchase_order_id", "expected_delivery",
                                                   "booking_id", "engineer_name", "booking_start", "escalation_reason",
-                                                  "operator_summary", "warnings")}, indent=2))
+                                                  "operator_summary", "downtime", "warnings")}, indent=2))
     return 0
 
 

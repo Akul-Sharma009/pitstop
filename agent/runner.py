@@ -9,7 +9,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from agent import guard
-from agent.models import AgentResult, Alert, ToolCall
+from agent.models import AgentResult, Alert, Downtime, ToolCall
 from agent.reconcile import reconcile
 
 log = logging.getLogger(__name__)
@@ -37,7 +37,25 @@ def finalize(plan: dict[str, Any], trace: list[ToolCall], alert: Alert, backend:
     except ValidationError as exc:
         return failed(alert, backend, f"Agent returned an invalid plan: {exc.errors()[0]['msg']}", trace)
     result.warnings = notes + guard.check(result, alert)
+    result.downtime = downtime(result)
     return result
+
+
+def downtime(result: AgentResult) -> Downtime | None:
+    """Planned swap vs unplanned breakdown, from the booked repair time and stated assumptions."""
+    if result.status != "awaiting_approval" or not (result.booking_start and result.booking_end):
+        return None
+    planned_min = (result.booking_end - result.booking_start).total_seconds() / 60
+    unplanned_h = float(os.environ.get("UNPLANNED_DOWNTIME_H", 8))
+    cost_per_h = float(os.environ.get("DOWNTIME_COST_PER_H", 500))
+    currency = os.environ.get("DOWNTIME_CURRENCY", "SGD")
+    saved_h = max(unplanned_h - planned_min / 60, 0)
+    return Downtime(
+        planned_min=planned_min, unplanned_h=unplanned_h, saved_h=round(saved_h, 2), cost_per_h=cost_per_h,
+        currency=currency, money_saved=round(saved_h * cost_per_h, 2),
+        assumptions=f"An unplanned tool breakdown stops the machine for about {unplanned_h:g} h; "
+                    f"downtime costs about {cost_per_h:g} {currency} per hour.",
+    )
 
 
 def failed(alert: Alert, backend: str, reason: str, trace: list[ToolCall] | None = None) -> AgentResult:
