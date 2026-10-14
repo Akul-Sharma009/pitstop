@@ -17,7 +17,7 @@ from typing import Any
 
 from agent.factory_log import FactoryLog
 from agent.models import Alert
-from agent.prompts import SUBMIT_PLAN_SPEC, alert_message, strip_thinking
+from agent.prompts import alert_message, strip_thinking
 
 
 EVOLUS_BASE_URL = "https://api.evolus.ai/v1"
@@ -33,27 +33,57 @@ def evolus_client() -> Any:
     return OpenAI(base_url=os.environ.get("EVOLUS_BASE_URL") or EVOLUS_BASE_URL, api_key=os.environ["EVOLUS_API_KEY"])
 
 
+# What we ask Evolus to reply with. An example object, not a JSON Schema: given a schema, the model filled in
+# the schema's own outline ({"type": "object", "properties": {...plan...}}).
+PLAN_EXAMPLE = {
+    "status": "awaiting_approval or escalated",
+    "diagnosis": "what is wrong, in one sentence",
+    "repair_steps": ["step from the manual", "next step"],
+    "part_number": "part number from the manual",
+    "part_name": "part name",
+    "part_in_stock": False,
+    "purchase_order_id": "PO-... from draft_purchase_order, or null",
+    "expected_delivery": "ISO time from the order, or null",
+    "booking_id": "BK-... from draft_booking, or null",
+    "engineer_name": "engineer from find_free_engineers, or null",
+    "booking_start": "ISO time, or null",
+    "booking_end": "ISO time, or null",
+    "escalation_reason": "why no engineer could be booked, or null",
+    "operator_summary": "3-5 short plain sentences for the machine operator",
+}
+
+
 def extract_json(text: str) -> dict[str, Any]:
-    """Return the last JSON object in the text (models often wrap it in prose or a code fence)."""
+    """Return the last top-level JSON object in the text (models often wrap it in prose or a code fence).
+
+    If the model echoed a JSON Schema outline around the plan, unwrap {"properties": {...}}.
+    """
     decoder = json.JSONDecoder()
-    found = None
-    for start, char in enumerate(text):
-        if char == "{":
-            try:
-                obj, _ = decoder.raw_decode(text, start)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(obj, dict):
-                found = obj
+    found, start = None, 0
+    while (start := text.find("{", start)) != -1:
+        try:
+            obj, end = decoder.raw_decode(text, start)
+        except json.JSONDecodeError:
+            start += 1
+            continue
+        if isinstance(obj, dict):
+            found = obj
+        start = end
     if found is None:
         raise EvolusError("Evolus reply contained no JSON plan.")
+    if "status" not in found and isinstance(found.get("properties"), dict):
+        found = found["properties"]
     return found
 
 
 def evolus_message(alert: Alert) -> str:
     """The user message for one alert: the alert, then the JSON plan we want back."""
-    schema = json.dumps(SUBMIT_PLAN_SPEC["parameters"])
-    return f"{alert_message(alert)}\n\nWhen you are done, reply with only a JSON object matching this schema:\n{schema}"
+    example = json.dumps(PLAN_EXAMPLE, indent=2)
+    return (
+        f"{alert_message(alert)}\n\n"
+        "When you are done, reply in English with only the plan as one JSON object with these keys "
+        f"(replace each description with the real value; use null where it says so):\n{example}"
+    )
 
 
 class EvolusAgent:

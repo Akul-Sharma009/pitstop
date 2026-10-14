@@ -251,3 +251,20 @@ def test_evolus_run_is_traced_and_checked_from_the_factory_log():
     assert [c.tool for c in result.trace] == [name for name, _ in script[1:-1]]
     assert result.purchase_order_id == "PO-0001" and result.booking_id == "BK-0001"
     assert result.status == "awaiting_approval" and result.warnings == []
+
+
+def test_evolus_plan_wrapped_in_a_schema_outline_is_unwrapped():
+    plan = {"status": "awaiting_approval", "diagnosis": "worn", "repair_steps": [], "part_number": PART,
+            "escalation_reason": None, "operator_summary": "x"}
+    reply = json.dumps({"type": "object", "properties": plan, "required": ["status"]})
+    assert extract_json(reply) == plan
+    assert extract_json("Plan:\n" + json.dumps({**plan, "repair_steps": [{"step": 1}]}))["status"] == "awaiting_approval"
+
+
+def test_evolus_message_asks_for_english_and_an_example_not_a_schema():
+    from agent.evolus_client import evolus_message
+    from agent.prompts import EVOLUS_SYSTEM_PROMPT
+
+    message = evolus_message(make_alert())
+    assert "in English" in message and '"properties"' not in message and '"operator_summary"' in message
+    assert "Always write in English" in EVOLUS_SYSTEM_PROMPT

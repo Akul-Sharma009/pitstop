@@ -78,6 +78,9 @@ EVOLUS_SYSTEM_PROMPT = SYSTEM_PROMPT.replace(
    part, escalation_reason (when escalating) and operator_summary.""",
     """5. Finish: reply with only the JSON plan described in the message, nothing else. Copy order and booking
    IDs, times and the engineer exactly from your tool results.""",
+).replace(
+    "Rules:\n",
+    "Rules:\n- Always write in English, whatever language the workspace or the manual uses.\n",
 )
 
 
