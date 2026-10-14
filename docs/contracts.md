@@ -35,7 +35,9 @@ detector ──Alert──▶ app ──Alert──▶ agent service ──tools
 
 ## 2. AgentResult (agent service → app)
 
-`GET {AGENT_URL}/incidents/latest` returns `{"alert", "result", "received_at"}` for the latest alert; `result` is `null` while the agent is still planning; 404 before the first alert. The screens follow it (section 5).
+`GET {AGENT_URL}/incidents/latest` returns `{"alert", "result", "received_at", "feedback", "previous"}` for the latest alert; `result` is `null` while the agent is still planning; `feedback` and `previous` (the plan the manager rejected) are set after a replan; 404 before the first alert. The screens follow it (section 5).
+
+**Replan.** `POST {AGENT_URL}/incidents/replan` with `{"feedback": "Priya is on leave on Thursday", "purchase_order": <order>|null, "booking": <booking>|null}`: the previous plan's drafts as the mocks have them now (the app sends them after a rejection). The agent plans the latest alert again with the feedback. A purchase order that is not rejected still stands: the new plan reuses it (it appears first in `trace` as `draft_purchase_order` with `{"from_previous_plan": true}`) and must not order again. Returns the new AgentResult; 404 without an alert, 409 while the agent is still planning.
 
 Response of `POST /incidents`:
 
@@ -140,4 +142,4 @@ The manager approval screen and the operator summary (`app/static`), served with
 |---|---|---|
 | GET | `/api/latest` | `GET {AGENT_URL}/incidents/latest`; `{"alert": null, "result": null}` before the first alert |
 | GET | `/api/purchase-orders/{id}`, `/api/bookings/{id}` | the order or booking from the mocks (its approval status) |
-| POST | `/api/purchase-orders/{id}/approve\|reject`, `/api/bookings/{id}/approve\|reject` | the manager's decision, to the mocks' **app only** endpoints |
+| POST | `/api/purchase-orders/{id}/approve\|reject`, `/api/bookings/{id}/approve\|reject` | the manager's decision, to the mocks' **app only** endpoints. A reject with body `{"reason": "..."}` also starts a replan in the background (`POST {AGENT_URL}/incidents/replan`) |

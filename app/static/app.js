@@ -47,6 +47,12 @@ function setStatus(status) {
   $('status').dataset.status = status || '';
 }
 
+// After a rejection with a reason, the plan on screen is the agent's new plan: say why there is one.
+function showFeedback(feedback) {
+  $('feedback').hidden = !feedback;
+  $('feedback').textContent = feedback ? `New plan after the manager's feedback: "${feedback}"` : '';
+}
+
 function showAlert(alert) {
   if (!alert) {
     $('alert-text').textContent = 'No alert yet. Run the detector replay to start.';
@@ -68,7 +74,7 @@ function load(data, demo = false) {
   $('op-update').hidden = true;
   setStatus(data.status);
   setText('machine', data.machine_id);
-  setText('part', data.part_number ? `${data.part_number} · ${data.part_name || ''}` : 'Not selected');
+  setText('part', data.part_number ? [data.part_number, data.part_name].filter(Boolean).join(' · ') : 'Not selected');
   setText('planned', data.downtime?.planned_min != null ? `${data.downtime.planned_min} min` : '—');
   setText('diagnosis', data.diagnosis);
   $('steps').replaceChildren(...(data.repair_steps || []).map((step) => Object.assign(document.createElement('li'), { textContent: step })));
@@ -147,6 +153,7 @@ function showDecision(kind, item) {
     if (!open) disarm($(`${kind}-${action}`)); // a refresh while pending keeps a half-confirmed click
   }
   $(`${kind}-approve`).parentElement.hidden = !open; // a decided draft has no buttons left
+  if (!open) $(`${kind}-reason`).hidden = true;
   decided[kind] = item.status;
   // Once the manager has decided every draft of an awaiting plan, the status says so.
   const drafts = [['po', result?.purchase_order_id], ['booking', result?.booking_id]].filter(([, id]) => id).map(([k]) => decided[k]);
@@ -164,12 +171,18 @@ function showDecision(kind, item) {
 }
 
 // Two clicks instead of a browser confirm() dialog, which automated browsers (and demo recordings) suppress.
+// A reject also asks for a reason: with one, the agent makes a new plan (replan); it stays armed while typing.
 function arm(button, action) {
   button.dataset.armed = '1';
   button.dataset.label = button.textContent;
-  button.textContent = action === 'approve' ? 'Click to confirm' : 'Click to reject';
+  button.textContent = action === 'approve' ? 'Click to confirm' : 'Confirm reject';
   button.classList.add('armed');
-  button.timer = setTimeout(() => disarm(button), 5000);
+  if (action === 'approve') button.timer = setTimeout(() => disarm(button), 5000);
+  else {
+    const reason = $(button.id.replace('-reject', '-reason'));
+    reason.hidden = false;
+    reason.focus();
+  }
 }
 
 function disarm(button) {
@@ -178,6 +191,7 @@ function disarm(button) {
   delete button.dataset.armed;
   button.textContent = button.dataset.label;
   button.classList.remove('armed');
+  if (button.id.endsWith('-reject')) $(button.id.replace('-reject', '-reason')).hidden = true;
 }
 
 async function refreshItem(kind, id) {
@@ -197,14 +211,20 @@ async function decision(kind, action) {
     arm(button, action);
     return;
   }
+  const reason = action === 'reject' ? $(`${kind}-reason`).value.trim() : '';
   disarm(button);
   $(`${kind}-approve`).disabled = $(`${kind}-reject`).disabled = true;
   try {
-    const response = await fetch(`/api/${API[kind]}/${encodeURIComponent(id)}/${action}`, { method: 'POST' });
+    const response = await fetch(`/api/${API[kind]}/${encodeURIComponent(id)}/${action}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }),
+    });
     const body = await response.json();
     if (!response.ok) throw new Error(body.detail || `HTTP ${response.status}`);
     showDecision(kind, body);
-    $('message').textContent = `${label[0].toUpperCase()}${label.slice(1)} ${id}: ${body.status}.`;
+    $(`${kind}-reason`).value = '';
+    $('message').textContent = reason
+      ? `${label[0].toUpperCase()}${label.slice(1)} ${id} rejected. The agent is making a new plan with your reason…`
+      : `${label[0].toUpperCase()}${label.slice(1)} ${id}: ${body.status}.`;
   } catch (e) {
     $('message').textContent = `Request failed: ${e.message}`;
     refreshItem(kind, id);
@@ -229,6 +249,7 @@ async function poll() {
     }
     seen = key;
     showAlert(latest.alert);
+    showFeedback(latest.feedback);
     if (latest.result) load(latest.result);
     else if (latest.alert) clearPlan('planning');
   } catch {

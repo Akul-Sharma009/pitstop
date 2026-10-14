@@ -12,7 +12,7 @@ import time
 from typing import Any
 
 from agent import manual
-from agent.models import Alert, ToolCall
+from agent.models import Alert, Replan, ToolCall
 from agent.times import label_times, readable, utc
 from agent.prompts import SEARCH_MANUAL_SPEC, SUBMIT_PLAN_SPEC, SYSTEM_PROMPT, alert_message, reasoning_of, strip_thinking
 from mcp_server.factory import FactoryClient
@@ -53,15 +53,18 @@ class LocalAgent:
         self.delivery: str | None = None
         self.transcript: list[dict[str, Any]] = []  # one entry per model reply, for debugging
 
-    def run(self, alert: Alert) -> tuple[dict[str, Any], list[ToolCall]]:
-        """Return the submitted plan and the trace of tool calls."""
+    def run(self, alert: Alert, replan: Replan | None = None) -> tuple[dict[str, Any], list[ToolCall]]:
+        """Return the submitted plan and the trace of tool calls. With `replan`, plan again after the
+        manager's feedback on the previous plan."""
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": SYSTEM_PROMPT + ("\n/no_think" if self.no_think else "")},
-            {"role": "user", "content": alert_message(alert, self.no_think)},
+            {"role": "user", "content": alert_message(alert, self.no_think, replan)},
         ]
         trace: list[ToolCall] = []
         self.now = alert.detected_at
-        self.delivery: str | None = None  # expected_delivery of the drafted order, once there is one
+        standing = replan.standing_order() if replan else None
+        # expected_delivery of the order the repair waits for: a standing one, or the one drafted in this run
+        self.delivery: str | None = standing.get("expected_delivery") if standing else None
         self.manual_parts = set()
         self.transcript = []
         nudged = False

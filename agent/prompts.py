@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from agent.models import Alert
+from agent.models import Alert, Replan
 from agent.times import hours_between, readable
 
 _THINK = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
@@ -121,7 +121,34 @@ SEARCH_MANUAL_SPEC = {
 }
 
 
-def alert_message(alert: Alert, no_think: bool = False) -> str:
+def replan_message(replan: Replan) -> str:
+    """What the manager said about the previous plan, and which of its drafts still stand."""
+    status = {"pending_approval": "still waiting for approval", "approved": "approved by the manager",
+              "rejected": "REJECTED by the manager"}
+    lines = ["", "The manager reviewed your previous plan for this alert and asked for a new one.",
+             f'Manager\'s feedback: "{replan.feedback.strip()}"', "Previous plan:"]
+    if order := replan.purchase_order:
+        lines.append(f"- Purchase order {order.get('po_id')} for {order.get('part_number')}, expected delivery "
+                     f"{readable(order.get('expected_delivery'))} ({order.get('expected_delivery')}): "
+                     f"{status.get(order.get('status'), order.get('status'))}.")
+    else:
+        lines.append("- No purchase order.")
+    if booking := replan.booking:
+        lines.append(f"- Booking {booking.get('booking_id')}: engineer {booking.get('engineer_id')} from "
+                     f"{readable(booking.get('start'))}: {status.get(booking.get('status'), booking.get('status'))}.")
+    else:
+        lines.append("- No booking.")
+    lines += [
+        "Make a new plan that follows the manager's feedback:",
+        "- Rejected drafts are cancelled; never reuse them or book the same thing again unless the feedback allows it.",
+        "- A purchase order that was not rejected still stands: do not order the part again. Use its expected "
+        "delivery as the earliest start and give its purchase_order_id when you book.",
+        "- If the feedback rules out every option, do not book: escalate and say why.",
+    ]
+    return "\n".join(lines)
+
+
+def alert_message(alert: Alert, no_think: bool = False, replan: Replan | None = None) -> str:
     lines = [
         "New failure warning. Plan the repair.",
         f"Now: {readable(alert.detected_at)} ({alert.detected_at.isoformat()}).",
@@ -136,5 +163,7 @@ def alert_message(alert: Alert, no_think: bool = False) -> str:
             "This is machine running time, not clock time."
         )
     message = "\n".join(lines) + f"\n\nAlert data:\n{alert.model_dump_json(indent=2)}"
+    if replan:
+        message += "\n" + replan_message(replan)
     # Qwen3's soft switch to skip thinking, for servers that ignore chat_template_kwargs (e.g. Ollama).
     return f"{message}\n/no_think" if no_think else message

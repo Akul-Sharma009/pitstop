@@ -296,3 +296,29 @@ def test_latest_incident_is_kept_for_the_screens(monkeypatch):
     latest = client.get("/incidents/latest").json()
     assert latest["alert"]["machine_id"] == "M-01" and latest["result"]["booking_id"] == "BK-0001"
     assert latest["result"]["downtime"]["saved_h"] == 7.5
+
+
+def test_replan_endpoint_plans_again_with_the_feedback(monkeypatch):
+    from agent.prompts import replan_message
+    from agent.models import Replan
+
+    monkeypatch.setattr(api, "latest", {})
+    llms = []
+
+    def make(backend=None):
+        llms.append(ScriptedLLM(thin_path_script()))
+        return LocalAgent(llm=llms[-1], factory=FakeFactory().client(), manual_sections=MANUAL, model="test")
+
+    monkeypatch.setattr(runner, "make_agent", make)
+    client = TestClient(api.app)
+    assert client.post("/incidents/replan", json={"feedback": "x"}).status_code == 404
+    first = client.post("/incidents", json=make_alert().model_dump(mode="json")).json()
+    order = {"po_id": "PO-0001", "part_number": PART, "expected_delivery": "2026-10-15T08:00:00+00:00", "status": "approved"}
+    booking = {"booking_id": "BK-0001", "engineer_id": "E-01", "start": "2026-10-15T14:00:00+00:00", "status": "rejected"}
+    response = client.post("/incidents/replan", json={"feedback": "Priya is on leave", "purchase_order": order, "booking": booking})
+    assert response.status_code == 200
+    latest = client.get("/incidents/latest").json()
+    assert latest["feedback"] == "Priya is on leave" and latest["previous"]["booking_id"] == first["booking_id"]
+    sent = llms[-1].requests[0]["messages"][1]["content"]
+    assert 'feedback: "Priya is on leave"' in sent and "approved by the manager" in sent and "REJECTED" in sent
+    assert "do not order the part again" in replan_message(Replan(feedback="x", purchase_order=order))

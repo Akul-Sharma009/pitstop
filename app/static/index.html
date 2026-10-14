@@ -44,6 +44,7 @@
       <div class="cols">
         <article class="panel">
           <h2>Agent's maintenance plan</h2>
+          <p id="feedback" class="update" hidden></p>
           <p id="diagnosis" class="lead">The plan appears here when the agent has finished.</p>
           <ol id="steps"></ol>
           <div class="detail"><span>Part in stock</span><b id="stock">—</b></div>
@@ -58,10 +59,12 @@
           <div class="decision">
             <div><b>Purchase order</b> <span id="po-state" class="state"></span><div id="po-id" class="muted">No order</div></div>
             <div class="buttons"><button id="po-approve" disabled>Approve</button><button id="po-reject" class="danger" disabled>Reject</button></div>
+            <input id="po-reason" class="reason" hidden placeholder="Why? The agent makes a new plan with your reason (optional)">
           </div>
           <div class="decision">
             <div><b>Engineer booking</b> <span id="booking-state" class="state"></span><div id="booking-id" class="muted">No booking</div></div>
             <div class="buttons"><button id="booking-approve" disabled>Approve</button><button id="booking-reject" class="danger" disabled>Reject</button></div>
+            <input id="booking-reason" class="reason" hidden placeholder="Why? The agent makes a new plan with your reason (optional)">
           </div>
           <p id="message" class="note" role="status"></p>
         </article>

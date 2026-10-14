@@ -63,6 +63,8 @@ def reconcile(plan: dict[str, Any], trace: list[ToolCall]) -> tuple[dict[str, An
     )
     if stock:
         plan["part_in_stock"] = stock.result.get("quantity_on_hand", 0) > 0
+    elif order and order.result.get("part_number") == plan.get("part_number") and plan.get("part_in_stock") is None:
+        plan["part_in_stock"] = False  # it had to be ordered (e.g. a replan reusing the previous plan's order)
 
     if plan["status"] == "escalated":
         # The operator must not be told a repair is coming when nobody is booked: say it from the facts.

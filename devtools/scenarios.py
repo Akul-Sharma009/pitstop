@@ -25,7 +25,19 @@ PARTS = {
     "EM-1006": ("Carbide end mill 6 mm 2-flute (finishing)", 24),
     "CP-220": ("Coolant pump", 72),
 }
-ENGINEERS = {"E-01": ("Priya Nair", ["cnc_tooling"]), "E-02": ("Daniel Tan", ["mechanical"])}
+ENGINEERS = {"E-01": ("Priya Nair", ["cnc_tooling"]), "E-02": ("Daniel Tan", ["mechanical"]),
+             "E-03": ("Wei Ling Ho", ["cnc_tooling"])}
+
+
+@dataclass
+class Previous:
+    """For a replan: the plan the manager reviewed, and what they said."""
+
+    feedback: str
+    order_status: str  # the previous purchase order (for the scenario's part): pending_approval|approved|rejected
+    booking: tuple[str, float]  # (engineer, slot hours after NOW) the previous plan booked
+    booking_status: str = "rejected"
+    avoid: tuple[str, ...] = ()  # engineers the feedback rules out
 
 
 @dataclass
@@ -43,6 +55,7 @@ class Scenario:
     booking: tuple[str, float] | None = None  # (engineer, slot hours after NOW) to book; None: must escalate
     search: tuple[str, int] | None = ("cnc_tooling", 30)  # (skill, repair minutes) the engineer search must use
     search_required: bool = True  # False: escalating without any engineer search is fine
+    previous: Previous | None = None  # set for replan scenarios
 
     @property
     def failure_at(self) -> datetime:
@@ -94,6 +107,14 @@ SCENARIOS = {s.name: s for s in [
     Scenario("detector_code", "The alert uses the AI4I code TWF instead of tool_wear: same plan as out_of_stock.",
              failure_type="TWF", stock={"EM-1006": 5, "CP-220": 1}, slots={"E-01": [7, 30]}, order=True,
              booking=("E-01", 30)),
+    # Replans: the manager rejected part of the previous plan, with a reason.
+    Scenario("replan_engineer_on_leave", "Replan: Priya is on leave, so book Wei Ling and keep the standing order.",
+             slots={"E-01": [7, 30], "E-03": [33]}, order=True, booking=("E-03", 33),
+             previous=Previous("Priya Nair is on leave on Thursday 15 Oct. Book someone else.", "pending_approval",
+                               ("E-01", 30), avoid=("E-01",))),
+    Scenario("replan_budget_frozen", "Replan: the order was rejected because purchasing is frozen: don't order, escalate.",
+             slots={"E-01": [7, 30], "E-03": [33]}, search=None, search_required=False,
+             previous=Previous("Purchasing is frozen until Monday: no new orders.", "rejected", ("E-01", 30))),
 ]}
 CORE = ["out_of_stock", "in_stock", "no_engineer"]
 

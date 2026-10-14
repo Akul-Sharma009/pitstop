@@ -26,7 +26,7 @@ def test_scenario_expectations_follow_from_its_data(name):
     start = s.delivery if must_wait else NOW
     fitting = sorted(
         (NOW + timedelta(hours=h), eid)
-        for eid, hours in s.slots.items() if skill in ENGINEERS[eid][1]
+        for eid, hours in s.slots.items() if skill in ENGINEERS[eid][1] and not (s.previous and eid in s.previous.avoid)
         for h in hours
         if NOW + timedelta(hours=h) >= start and NOW + timedelta(hours=h, minutes=minutes) <= s.failure_at
     )
@@ -103,3 +103,43 @@ def test_wrong_skill_in_the_engineer_search_is_caught():
     problems = check("coolant_pump", result, factory)
     assert any("skill 'cnc_tooling'" in p for p in problems)
     assert any("expected 1 booking" in p for p in problems)
+
+
+def test_replan_keeps_the_standing_order_and_books_someone_else():
+    from scripts.eval_agent import prepare
+
+    s = SCENARIOS["replan_engineer_on_leave"]
+    factory = FakeFactory("replan_engineer_on_leave")
+    replan = prepare("replan_engineer_on_leave", factory)
+    assert replan.standing_order()["po_id"] == "PO-0001" and replan.booking["status"] == "rejected"
+    delivery = s.delivery.isoformat()
+    steps = [
+        ("search_manual", {"query": "tool wear end mill"}),
+        ("find_free_engineers", {"skill": "cnc_tooling", "earliest_start": delivery,
+                                 "latest_end": s.failure_at.isoformat(), "duration_minutes": 30}),
+        ("draft_booking", {"engineer_id": "E-03", "machine_id": "M-01", "start": "2026-10-15T17:00:00+00:00",
+                           "end": "2026-10-15T17:30:00+00:00", "task": "Replace end mill", "purchase_order_id": "PO-0001"}),
+        plan(part_number="EM-1004", part_in_stock=False,
+             operator_summary="Wei Ling Ho will replace the tool on Thursday at 17:00 UTC, once the manager approves."),
+    ]
+    llm = ScriptedLLM(steps)
+    agent = LocalAgent(llm=llm, factory=factory.client(), manual_sections=REAL_MANUAL, model="t")
+    result = runner.run(s.alert(), agent=agent, backend="local", replan=replan)
+    assert "Priya Nair is on leave" in llm.requests[0]["messages"][1]["content"]
+    assert result.trace[0].arguments == {"from_previous_plan": True}
+    assert result.purchase_order_id == "PO-0001" and result.booking_id == "BK-0002"
+    assert result.warnings == [] and check("replan_engineer_on_leave", result, factory) == []
+
+
+def test_replan_that_orders_again_is_caught():
+    from scripts.eval_agent import prepare
+
+    factory = FakeFactory("replan_engineer_on_leave")
+    replan = prepare("replan_engineer_on_leave", factory)
+    result = runner.run(SCENARIOS["replan_engineer_on_leave"].alert(), backend="local", replan=replan, agent=LocalAgent(
+        llm=ScriptedLLM([
+            ("search_manual", {"query": "tool wear"}),
+            ("draft_purchase_order", {"part_number": "EM-1004", "quantity": 1, "machine_id": "M-01", "reason": "x"}),
+            plan(status="escalated", part_number="EM-1004", escalation_reason="x"),
+        ]), factory=factory.client(), manual_sections=REAL_MANUAL, model="t"))
+    assert any("drafted 2 orders" in p for p in check("replan_engineer_on_leave", result, factory))

@@ -16,7 +16,7 @@ import os
 from typing import Any
 
 from agent.factory_log import FactoryLog
-from agent.models import Alert
+from agent.models import Alert, Replan
 from agent.prompts import alert_message, strip_thinking
 
 
@@ -76,11 +76,11 @@ def extract_json(text: str) -> dict[str, Any]:
     return found
 
 
-def evolus_message(alert: Alert) -> str:
-    """The user message for one alert: the alert, then the JSON plan we want back."""
+def evolus_message(alert: Alert, replan: Replan | None = None) -> str:
+    """The user message for one alert (and the manager's feedback, when replanning), then the JSON plan."""
     example = json.dumps(PLAN_EXAMPLE, indent=2)
     return (
-        f"{alert_message(alert)}\n\n"
+        f"{alert_message(alert, replan=replan)}\n\n"
         "When you are done, reply in English with only the plan as one JSON object with these keys "
         f"(replace each description with the real value; use null where it says so):\n{example}"
     )
@@ -92,11 +92,11 @@ class EvolusAgent:
         self.agent_id = agent_id or os.environ["EVOLUS_AGENT_ID"]  # "<applicationId>:<agentId>"
         self.factory_log = factory_log or FactoryLog()
 
-    def run(self, alert: Alert) -> tuple[dict[str, Any], list]:
+    def run(self, alert: Alert, replan: Replan | None = None) -> tuple[dict[str, Any], list]:
         start = self.factory_log.last()
         response = self.llm.chat.completions.create(
             model=self.agent_id,
-            messages=[{"role": "user", "content": evolus_message(alert)}],
+            messages=[{"role": "user", "content": evolus_message(alert, replan)}],
         )
         plan = extract_json(strip_thinking(response.choices[0].message.content or ""))
         return plan, self.factory_log.calls_after(start)

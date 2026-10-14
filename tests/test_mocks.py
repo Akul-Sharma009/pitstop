@@ -115,7 +115,7 @@ def test_call_log_keeps_errors_and_slot_shape():
     client.find_free_engineers("cnc_tooling", START.isoformat(), (START + timedelta(days=3)).isoformat(), 30)
     first, search = http.get("/admin/calls").json()["calls"]
     assert first["result"] == {"error": "404: unknown part"}
-    assert search["arguments"]["duration_minutes"] == 30 and len(search["result"]["slots"]) == 2
+    assert search["arguments"]["duration_minutes"] == 30 and len(search["result"]["slots"]) == 3  # Priya x2, Wei Ling
 
 
 def test_search_before_the_ordered_part_arrives_is_refused():
