@@ -157,3 +157,12 @@ def test_urgent_demo_needs_the_fast_supplier():
     cheap, fast = offers[0]["expected_delivery"], offers[1]["expected_delivery"]
     assert cheap > failure  # too late
     assert client.find_free_engineers("cnc_tooling", fast, failure, 30)["slots"]
+
+
+def test_empty_search_window_is_refused():
+    """Searching from a delivery after the predicted failure: say why, instead of an empty list."""
+    _, client = demo("urgent")
+    cheap = client.get_supplier_quote("EM-1004")["offers"][0]["expected_delivery"]
+    failure = (DETECTED + timedelta(hours=16)).isoformat()
+    refused = client.find_free_engineers("cnc_tooling", cheap, failure, 30)
+    assert refused["error"].startswith("422: the window is empty") and "faster supplier" in refused["error"]

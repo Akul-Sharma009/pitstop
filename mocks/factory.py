@@ -213,6 +213,10 @@ class MockFactory:
             duration = timedelta(minutes=int(params["duration_minutes"]))
         except (KeyError, ValueError) as exc:
             return _error(422, f"bad query: {exc}")
+        if earliest >= latest:
+            return _error(422, f"the window is empty: earliest_start {params['earliest_start']} is not before latest_end "
+                               f"{params['latest_end']}. If the part arrives after the predicted failure, order from a "
+                               "faster supplier, or escalate to the manager")
         # Demo rule, the same one the local agent enforces: once a part is on order, the repair window starts
         # when it arrives. Here it holds for every agent, Evolus included.
         ordered = [o for o in self.orders.values() if o["status"] != "rejected"]

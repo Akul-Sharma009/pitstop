@@ -20,6 +20,8 @@ FAILURE = datetime.fromisoformat("2026-10-16T08:00:00+00:00")
 READINGS = {"air_temperature_k": 298.9, "process_temperature_k": 309.1, "rotational_speed_rpm": 1420, "torque_nm": 46.3}
 
 # Parts: name and supplier offers (supplier, unit price, lead time in hours), cheapest first.
+# The suppliers (ToolCo, SpeedTool, EUR) differ from the demo seed (mocks/seed.json: the teammate's fictional
+# suppliers, SGD) on purpose: the eval must not pass because the prompt was tuned on the demo's names.
 # Engineers: id → (name, skills).
 CHEAP, FAST = "ToolCo", "SpeedTool"
 PARTS = {

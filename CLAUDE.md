@@ -99,13 +99,7 @@ Plan to the deadline (agreed 14 Oct, re-dated the same evening: Wed 14 already c
 | Sat 17 PM | Fresh-clone README test; demo video on AMD (if AMD failed: on the stand-in, said plainly); slides, cover image, descriptions and tags (Claude drafts, Akul reviews) |
 | Sun 18 AM | Final checks and upload; **submit by 12:00 SGT**. No building or recording on Sunday |
 
-Next up (agreed 14 Oct evening, do this first in a new session), on branch `supplier-choice`:
-1. Local agent (`agent/local_agent.py`, `_execute`): remember the offers from the last `get_supplier_quote`. Refuse `draft_purchase_order` when the chosen offer (named `supplier`, or the cheapest if none) is delivered after `alert.predicted_failure_at` while another offer arrives before it. Message names the in-time supplier, e.g. "ToolCo delivers 15 Oct 08:00 UTC, after the predicted failure (15 Oct 00:00 UTC). SpeedTool delivers 14 Oct 14:00 UTC: order from SpeedTool." If no offer is in time, let the order through (those scenarios escalate; ordering is optional).
-2. Mock calendar (`mocks/factory.py`, `_free`): 422 when `earliest_start >= latest_end` ("the window is empty: … if the part arrives after the predicted failure, choose a faster supplier or escalate"). Contract note.
-3. Guard (`agent/guard.py`): warn when the order's `expected_delivery` is after the predicted failure while the quote had an offer in time (covers Evolus).
-4. Prompt step 3 (`agent/prompts.py`): "An offer delivered after predicted_failure_at is useless: skip it even if it is cheapest."
-5. Tests for 1–3; a comment in `devtools/scenarios.py` that the eval's fake suppliers (ToolCo/SpeedTool, EUR) differ from the demo seed (teammate's suppliers, SGD) on purpose.
-6. Akul: `--scenario fast_supplier --repeat 5` (expect 5/5), then `--core`; then merge `supplier-choice` (PR #8), re-paste the Evolus instructions, update this status.
+Next up, on branch `supplier-choice`: the `fast_supplier` fix is built (14 Oct, 112 tests pass). The local agent refuses an order that arrives after the predicted failure while another offer is in time, and names the in-time supplier. The mock calendar returns 422 for an empty search window. The guard warns about a late order (this covers Evolus). Prompt step 3 says that a late offer is useless. Akul: run `--scenario fast_supplier --repeat 5` (expect 5/5), then `--core`. Then merge `supplier-choice` (PR #8), re-paste the Evolus instructions (`python scripts/evolus_text.py prompt`) and update this status.
 
 Then: fleet mode (Thu, branch `fleet-mode`), hosting prep (basic_auth on the screens, "model offline" notice), AMD on Fri (pay by evening if no credits), operator chat via the Evolus widget (Fri), submission materials Sat PM (Claude drafts title, descriptions, tags, cover image, slides, video script).
 

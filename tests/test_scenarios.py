@@ -191,11 +191,68 @@ def test_fast_supplier_when_the_cheap_one_is_too_late():
     assert result.warnings == [] and check("fast_supplier", result, factory) == []
 
 
-def test_cheap_supplier_too_late_is_caught():
+def test_cheap_supplier_too_late_is_refused():
+    """The local agent refuses an order that arrives after the failure while another offer is in time."""
     result, factory = run("fast_supplier", fast_supplier_steps("ToolCo"))
-    problems = check("fast_supplier", result, factory)
-    assert any("ordered from ToolCo, expected SpeedTool" in p for p in problems)
-    assert not factory.bookings  # its delivery is after the failure: the calendar refused
+    refused = [c for c in result.trace if c.tool == "draft_purchase_order"][0].result["error"]
+    assert refused.startswith("ToolCo delivers Thu 15 Oct 08:00 UTC, after the predicted failure (Thu 15 Oct 00:00 UTC)")
+    assert refused.endswith("SpeedTool delivers Wed 14 Oct 14:00 UTC: order from SpeedTool.")
+    assert not factory.orders and not factory.bookings
+    assert "expected 1 purchase order, got 0" in check("fast_supplier", result, factory)  # the model must retry
+
+
+
+def test_after_the_refusal_the_fast_supplier_passes():
+    steps = fast_supplier_steps("SpeedTool")
+    cheap = ("draft_purchase_order", {**steps[3][1], "supplier": "ToolCo"})
+    result, factory = run("fast_supplier", steps[:3] + [cheap] + steps[3:])
+    assert list(factory.orders) == ["PO-0001"] and factory.orders["PO-0001"]["supplier"] == "SpeedTool"
+    assert result.warnings == [] and check("fast_supplier", result, factory) == []
+
+def test_late_order_goes_through_when_no_offer_is_in_time():
+    """Failure in 5 h, before either supplier can deliver: the order is the manager's call, the plan escalates."""
+    s = SCENARIOS["part_too_late"]
+    result, factory = run("part_too_late", [
+        ("search_manual", {"query": "tool wear end mill"}),
+        ("check_inventory", {"part_number": "EM-1004"}),
+        ("get_supplier_quote", {"part_number": "EM-1004"}),
+        ("draft_purchase_order", {"part_number": "EM-1004", "quantity": 1, "machine_id": "M-01", "reason": "x",
+                                  "supplier": "SpeedTool"}),
+        ("find_free_engineers", {"skill": "cnc_tooling", "earliest_start": (NOW + timedelta(hours=6)).isoformat(),
+                                 "latest_end": s.failure_at.isoformat(), "duration_minutes": 30}),
+        plan(status="escalated", part_number="EM-1004", escalation_reason="No supplier delivers before the failure."),
+    ])
+    assert list(factory.orders) == ["PO-0001"]
+    search = [c for c in result.trace if c.tool == "find_free_engineers"][0].result
+    assert "the window is empty" in search["error"] and "faster supplier" in search["error"]
+    assert result.status == "escalated" and result.warnings == []
+
+
+class Replay:
+    """An agent that replays a fixed trace, like the Evolus backend does from the mocks' call log."""
+
+    def __init__(self, plan, trace):
+        self.plan, self.trace = plan, trace
+
+    def run(self, alert, replan=None):
+        return self.plan, self.trace
+
+
+def test_guard_flags_a_late_order_from_any_backend():
+    from agent.models import ToolCall
+    from mcp_server.tools import call_tool
+
+    factory = FakeFactory("fast_supplier")
+    client = factory.client()
+    trace = [ToolCall(tool=name, arguments=args, result=call_tool(client, name, args, now=NOW)) for name, args in [
+        ("check_inventory", {"part_number": "EM-1004"}),
+        ("get_supplier_quote", {"part_number": "EM-1004"}),
+        ("draft_purchase_order", {"part_number": "EM-1004", "quantity": 1, "machine_id": "M-01", "reason": "x"}),
+    ]]
+    result = runner.run(SCENARIOS["fast_supplier"].alert(), backend="evolus", agent=Replay(
+        dict(plan(status="escalated", part_number="EM-1004", escalation_reason="No engineer.")[1]), trace))
+    assert any("PO-0001 from ToolCo arrives after the predicted failure, but SpeedTool (EUR 145) would have arrived "
+               "in time." in w for w in result.warnings)
 
 
 def test_paying_for_speed_without_need_is_flagged():

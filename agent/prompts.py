@@ -45,8 +45,9 @@ Work through these steps with your tools:
 2. Check stock: check_inventory for that part number.
 3. Order (only if quantity_on_hand is 0): get_supplier_quote lists the offers, cheapest first, each with its
    expected_delivery if ordered now. Choose the cheapest offer that arrives early enough to finish the repair
-   before predicted_failure_at; pay for a faster supplier only when the cheaper one would be too late. If no
-   offer arrives in time, do not order: escalate. Then draft_purchase_order for quantity 1 with that supplier.
+   before predicted_failure_at; pay for a faster supplier only when the cheaper one would be too late. An offer
+   delivered after predicted_failure_at is useless: skip it even if it is cheapest. If no offer arrives in
+   time, do not order: escalate. Then draft_purchase_order for quantity 1 with that supplier.
    The part is available from the order's expected_delivery onwards.
 4. Schedule: find_free_engineers with the skill named in the manual (cnc_tooling for tool wear),
    earliest_start = the later of now and expected_delivery (now if the part is in stock),
