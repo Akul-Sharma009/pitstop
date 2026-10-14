@@ -6,7 +6,7 @@ The demo uses mocks/seed.json and manual/ instead."""
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import timedelta
 from types import SimpleNamespace
 from typing import Any
 
@@ -17,9 +17,7 @@ from agent.models import Alert
 from mcp_server.factory import FactoryClient
 from mocks.factory import MockFactory
 
-PART = "EM-1004"
-NOW = datetime.fromisoformat("2026-10-14T08:00:00+00:00")
-FAILURE = datetime.fromisoformat("2026-10-16T08:00:00+00:00")
+from devtools.scenarios import CORE, FAILURE, NOW, PART, SCENARIOS, seed  # noqa: F401  (re-exported)
 
 MANUAL = [
     Section(
@@ -40,33 +38,13 @@ MANUAL = [
     Section("cnc_mill_m01.md", "Coolant pump", "Replace pump CP-220 if coolant flow drops. Required skill: mechanical."),
 ]
 
-# Engineer E-01's free slots. Only those fully inside the requested window are returned.
-SLOTS = {
-    "out_of_stock": ["2026-10-14T15:00:00+00:00", "2026-10-15T14:00:00+00:00"],  # first is before delivery
-    "in_stock": ["2026-10-14T15:00:00+00:00", "2026-10-15T14:00:00+00:00"],
-    "no_engineer": ["2026-10-14T15:00:00+00:00", "2026-10-16T12:00:00+00:00"],  # none between delivery and failure
-}
-
-_SUPPLIER = {"supplier": "ToolCo", "unit_price": 89.0, "currency": "EUR", "lead_time_hours": 24}
-FAKE_SEED = {
-    "note": "Test data pinned to the sample alert.",
-    "parts": [
-        {"part_number": PART, "name": "Carbide end mill 10 mm 4-flute", "location": "B-3",
-         "stock": {"out_of_stock": 0, "in_stock": 2, "no_engineer": 0}, "supplier": _SUPPLIER},
-        {"part_number": "EM-1006", "name": "Carbide end mill 6 mm 2-flute", "location": "B-3",
-         "stock": dict.fromkeys(SLOTS, 5), "supplier": _SUPPLIER},
-    ],
-    "engineers": [{"engineer_id": "E-01", "name": "Priya Nair", "skills": ["cnc_tooling"]}],
-    "slots": {
-        scenario: [{"engineer_id": "E-01", "hours_after_reset": (datetime.fromisoformat(s) - NOW) / timedelta(hours=1)}
-                   for s in starts]
-        for scenario, starts in SLOTS.items()
-    },
-}
+# The scenarios' fake factory (devtools/scenarios.py). SLOTS: engineer E-01's slots in the three demo scenarios.
+FAKE_SEED = seed()
+SLOTS = {name: [(NOW + timedelta(hours=h)).isoformat() for h in SCENARIOS[name].slots["E-01"]] for name in CORE}
 
 
 class FakeFactory(MockFactory):
-    """The mock factory systems with test seed data and the clock pinned to the sample alert (NOW)."""
+    """The mock factory systems with the scenarios' seed data and the clock pinned to the alert (NOW)."""
 
     def __init__(self, scenario: str = "out_of_stock"):
         super().__init__(FAKE_SEED, scenario, clock=lambda: NOW)

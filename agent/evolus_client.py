@@ -39,7 +39,7 @@ PLAN_EXAMPLE = {
     "status": "awaiting_approval or escalated",
     "diagnosis": "what is wrong, in one sentence",
     "repair_steps": ["every repair step from the manual, in order, one per item"],
-    "part_number": "part number from the manual",
+    "part_number": "part number from the manual, or null if the manual lists none",
     "part_name": "part name",
     "part_in_stock": False,
     "purchase_order_id": "PO-... from draft_purchase_order, or null",
