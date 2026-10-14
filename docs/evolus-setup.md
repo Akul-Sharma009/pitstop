@@ -1,50 +1,77 @@
 # Evolus setup (runbook)
 
-Goal: the Pitstop agent runs inside Evolus on our vLLM model on AMD, with the manual in a knowledge library, the factory tools through our MCP server, and a workflow. Our app drives it through the Evolus API (`AGENT_BACKEND=evolus`).
+Goal: the Pitstop agent runs inside Evolus on our model, with the manual in a knowledge library and the factory tools from our MCP server. Our agent service drives it through Evolus agent chat (`AGENT_BACKEND=evolus`).
 
-Written before we had Evolus access: names of screens and fields may differ. Fix this file as you go.
+Source: the Evolus developer page (evolus.ai/en/developers) and the API reference inside the workspace. Fix this file as you go.
 
-## Before you start
+## What Evolus gives us
 
-- [ ] vLLM is serving on AMD Developer Cloud and `python scripts/check_vllm.py` passes (README, step 1–2).
-- [ ] `python -m scripts.eval_agent` passes all three scenarios with the local backend. If it doesn't, fix the model or prompt first: Evolus won't make it better.
-- [ ] Ports 80 and 443 open on the machine that hosts the MCP server (for now the GPU instance).
+| Way in | URL | Auth |
+|---|---|---|
+| Agent chat (OpenAI-compatible) | `https://api.evolus.ai/v1` | `Authorization: Bearer <application API key>` |
+| REST API (workflows, libraries, extractors, AI Tools) | `https://api.evolus.ai/api/v1` | `X-ApiKey` + `X-Application-Id`, or `X-User-ApiKey` |
+| Evolus MCP server (Evolus as tools for AI clients) | `https://api.evolus.ai/mcp` | same as REST |
 
-## 1. Put the MCP server on the internet
+- **Agent chat:** `model` is `<applicationId>:<agentId>`, and `GET /v1/models` lists them. Messages are text; temperature and other settings come from the agent. A request without `X-Conversation-Id` starts a new conversation (we send one per alert). The reply is the agent's final text only, so our trace comes from the mock factory's call log (`GET /admin/calls`, see `docs/contracts.md`).
+- **Workflows:** `POST /api/v1/workflows/{id}/execute` (multipart: `input`, `parameters`) returns `202` with an `executionId`. Then poll `GET …/executions/{executionId}` until `Completed` or `Failed`. A workflow that is off answers `409`.
+- **Libraries:** `POST /api/v1/memories/{libraryId}/documents?language=en` (multipart `file`). Indexing runs in the background and uses platform credits. Set `language=en`: the default is Italian.
+- **Your model:** any OpenAI-compatible endpoint with function calling (base URL, model name, API key), with a connection test. Calls to our own model use no Evolus credits.
+- **Limits:** 60 requests/min and 50,000 platform credits per workspace (credits pay for document reading, AI Tools and indexing). Out of credits → `402`.
+- **External tools:** *Your company → Connectors → Add manually* takes our MCP server (type HTTP, a URL, fixed header credentials). Confirmed 14 Oct: Evolus lists all 5 tools.
 
-Follow [`setup-guide.md`](setup-guide.md) steps 3–5: on the GPU instance, `docker compose --profile public up -d --build` serves the MCP server at `https://<IP>.sslip.io/mcp` (bearer `MCP_API_TOKEN`) and the model at `https://<IP>.sslip.io/v1`. On a separate server, the same command works without vLLM; then run `serve.sh` with `VLLM_PUBLIC_HOST` on the GPU instance for HTTPS on the model.
+## 1. Put the model and the MCP server online (stand-in: Ollama on the Mac)
 
-The mock factory (`mocks/`, seed data `mocks/seed.json`) starts with it. Reset the demo scenario before a run: `curl -X POST 'localhost:8000/admin/reset?scenario=out_of_stock'`.
+Until vLLM runs on AMD, Evolus reaches the Ollama stand-in through a Cloudflare quick tunnel. Ollama has no API key of its own, so Caddy (compose profile `tunnel`) only passes `/v1` requests that carry `VLLM_API_KEY`. The stand-in is for development only: never in screenshots or the video as the AMD model.
+
+In `.env`, set `VLLM_API_KEY` and `MCP_API_TOKEN` to long random values (`openssl rand -hex 24`), then:
+
+```bash
+docker compose --profile tunnel up -d --build
+cloudflared tunnel --url http://localhost:8088      # prints https://<random>.trycloudflare.com
+```
+
+Check from another terminal (`T=https://<random>.trycloudflare.com`):
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" $T/v1/models                                   # 401
+curl -s $T/v1/models -H "Authorization: Bearer $VLLM_API_KEY"                            # Ollama's models
+```
+
+The address changes every time the tunnel restarts; update it in Evolus when it does.
+
+With vLLM on AMD, use the HTTPS host from `setup-guide.md` steps 3–5 instead (`docker compose --profile public up -d --build`).
 
 ## 2. Workspace and model
 
-- [ ] Create the workspace at app.evolus.ai with the event code from kickoff.
-- [ ] Add our model endpoint: base URL `https://<IP>.sslip.io/v1`, API key `VLLM_API_KEY`, model `VLLM_MODEL`.
-- [ ] Screenshot the endpoint settings (submission: "Evolus workspace shows our AMD model endpoint").
+- [ ] Workspace "Machine Whisperers" (event workspace, created from the event link).
+- [ ] **Your models**: add our endpoint, then test the connection.
+  - Stand-in: base URL `$T/v1`, model `qwen3:30b-a3b-instruct-2507-q4_K_M`, API key `VLLM_API_KEY`.
+  - AMD: base URL `https://<IP>.sslip.io/v1`, model `Qwen/Qwen3-30B-A3B-Instruct-2507`, API key `VLLM_API_KEY`.
+- [ ] Screenshot the AMD endpoint settings for the submission (not the stand-in).
 
 ## 3. Building blocks
 
-- [ ] **Knowledge library**: upload the machine manual (`manual/*.md`, or a PDF of it).
-- [ ] **MCP connector**: URL `https://$PUBLIC_HOST/mcp`, header `Authorization: Bearer $MCP_API_TOKEN`. It should list 5 tools: `check_inventory`, `get_supplier_quote`, `draft_purchase_order`, `find_free_engineers`, `draft_booking`. There is no approve tool, on purpose.
-- [ ] **Agent**: model = our vLLM endpoint; instructions = the system prompt; attach the library and the connector.
-  Print the prompt with `python -c "from agent.prompts import SYSTEM_PROMPT; print(SYSTEM_PROMPT)"`.
-  In Evolus, "search the machine manual" is the knowledge library.
+- [ ] **Knowledge library**: upload `manual/*.md` (or a PDF of it) with language English.
+- [x] **Factory tools**: *Your company → Connectors → Add manually*: type HTTP, URL `$T/mcp`, header `Authorization: Bearer $MCP_API_TOKEN`, credentials Fixed. Evolus lists 5 tools: `check_inventory`, `get_supplier_quote`, `draft_purchase_order`, `find_free_engineers`, `draft_booking` (it files the two `draft_` tools under "Mail"; harmless). There is no approve tool, on purpose. Evolus strips spaces from connector names. When the tunnel address changes, edit the URL here and in Your models.
+- [ ] **Agent**: our model; instructions = the system prompt; attach the library and the tools.
+  Print the instructions with `python scripts/evolus_text.py prompt` (the Evolus version of the system prompt: the manual is the knowledge library, and the final reply is the JSON plan instead of a `submit_plan` call).
 - [ ] **Workflow**: diagnose → check stock → order (only if out of stock) → book engineer (or escalate) → summary.
-- [ ] Optional: chat widget for the operator view.
 
-Test in the Evolus playground with the sample alert:
+Test in the Evolus chat with an alert dated now, exactly as our backend sends it. Reset the mock factory first, so the engineer slots line up with now:
 
 ```bash
-python -c "from devtools.fakes import sample_alert; from agent.prompts import alert_message; print(alert_message(sample_alert()))"
+curl -X POST 'localhost:8000/admin/reset?scenario=out_of_stock'
+python scripts/evolus_text.py alert
 ```
 
-## 4. Drive it from our app (API)
+Then check what the agent did: `curl -s localhost:8000/admin/calls | python -m json.tool`.
 
-- [ ] Create an API key → `EVOLUS_API_KEY`.
-- [ ] Find the OpenAI-compatible base URL → `EVOLUS_BASE_URL`, and how to address our agent (agent id / model name) → `EVOLUS_AGENT_ID`.
-- [ ] Confirm the open questions in `agent/evolus_client.py` (endpoint path, auth header, agent addressing, whether tool calls come back in the reply), and update the code if they differ. If the workflow has its own REST trigger, decide whether the app calls the workflow or the agent.
-- [ ] Run it: `AGENT_BACKEND=evolus`, then `POST /incidents` with the sample alert (README). The plan should come back with a purchase order and booking that exist in the mock systems.
+## 4. Drive it from our agent service
+
+- [ ] Create an application API key on the workspace's API keys page → `EVOLUS_API_KEY` in `.env`. The same page shows the space ID (`X-Application-Id`, for the REST API).
+- [ ] `python scripts/evolus_check.py` lists the agents; put ours in `.env` as `EVOLUS_AGENT_ID` and run it again: the agent should answer.
+- [ ] Run it end to end: `AGENT_BACKEND=evolus` in `.env`, `docker compose up -d --build`, then `docker compose run --build --rm detector --scenario out_of_stock`. The plan should come back with a trace, a purchase order and a booking, and no warnings.
 
 ## Submission evidence
 
-Screenshots of: model endpoint, knowledge library, MCP connector with its tools, workflow, API key page (key hidden), and a run log of an API call.
+Screenshots of: the AMD model endpoint, the knowledge library, the factory tools with their 5 tools, the workflow, the API keys page (key hidden), and a run log of an API call.

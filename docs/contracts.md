@@ -91,7 +91,7 @@ The agent (and the MCP server) only use the endpoints marked **agent**. Approve/
 
 | Method | Path | Used by | Body / response |
 |---|---|---|---|
-| GET | `/calendar/engineers/free?skill=&earliest_start=&latest_end=&duration_minutes=` | agent | `[{"engineer_id", "name", "skills", "slot_start", "slot_end"}]` — free slots fully inside the window, may be empty |
+| GET | `/calendar/engineers/free?skill=&earliest_start=&latest_end=&duration_minutes=` | agent | `[{"engineer_id", "name", "skills", "slot_start", "slot_end"}]` — free slots fully inside the window, may be empty; 409 if a part is on order and `earliest_start` is before its `expected_delivery` (demo rule: the repair can't start before the part arrives) |
 | POST | `/calendar/bookings` | agent | body `{"engineer_id", "machine_id", "start", "end", "task", "purchase_order_id"}` → `{"booking_id", "status": "pending_approval", ...body}`; 409 if the slot is not free, or if `purchase_order_id` is given and `start` is before that order's `expected_delivery` |
 | GET | `/calendar/bookings/{booking_id}` | app | the booking |
 | POST | `/calendar/bookings/{booking_id}/approve` | **app only** | booking with `status: "approved"` |
@@ -107,6 +107,7 @@ Implementation: `mocks/factory.py` (`MockFactory`, in-memory), served by `mocks/
 |---|---|---|---|
 | POST | `/admin/reset?scenario=out_of_stock\|in_stock\|no_engineer` | app / demo | reset seed data → `{"scenario", "started"}` |
 | GET | `/health` | app / demo | `{"scenario", "note"}` |
+| GET | `/admin/calls?after=<seq>` | agent service / app | `{"last", "calls": [{"seq", "tool", "arguments", "result"}]}`: every call to an **agent** endpoint, in the shape of the MCP tools' results (errors as `{"error": "<status>: <detail>"}`, free slots as `{"slots": [...]}`). The Evolus backend reads its run's trace from here. Cleared by a reset; `seq` keeps counting. |
 
 Engineer slots are whole hours after the last reset (`hours_after_reset` in the seed), so reset just before each demo run (`detector.replay --scenario` does). The demo seed fits alerts with 25–45 cutting minutes left (`tests/test_mocks.py` checks this).
 

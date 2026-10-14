@@ -4,6 +4,7 @@
 #   docker compose up --build                       mock factory + MCP server + agent
 #   docker compose run --build --rm detector --scenario out_of_stock   replay M-01 and send the alert to the agent
 #   docker compose --profile public up -d           + HTTPS on PUBLIC_HOST (for Evolus)
+#   docker compose --profile tunnel up -d           + localhost:8088 for a Cloudflare tunnel (Ollama stand-in)
 #
 # Service ports are bound to localhost; on a public server only Caddy (80/443) is reachable.
 services:
@@ -67,6 +68,22 @@ services:
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
+    depends_on:
+      - mcp
+
+  # Development entry point for a Cloudflare quick tunnel: /v1 (Ollama, needs VLLM_API_KEY) and /mcp.
+  tunnel:
+    profiles: ["tunnel"]
+    image: caddy:2.8.4
+    environment:
+      VLLM_API_KEY: ${VLLM_API_KEY:-}   # required: Caddy refuses /v1 without it
+      MODEL_UPSTREAM: ${MODEL_UPSTREAM:-host.docker.internal:11434}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:8088:8088"
+    volumes:
+      - ./deploy/Caddyfile.tunnel:/etc/caddy/Caddyfile:ro
     depends_on:
       - mcp
 
