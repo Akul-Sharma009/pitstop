@@ -3,7 +3,9 @@
 Checks what the agent actually did in the factory systems, not only what it claims. Use it to pick the
 model and tune the prompt before the mocks and Evolus are ready.
 
-Usage: python -m scripts.eval_agent [--scenario out_of_stock|in_stock|no_engineer] [--repeat N] [-v] [--short-manual]
+Usage: python -m scripts.eval_agent [--scenario NAME]... [--core] [--repeat N] [-v] [--short-manual]
+Runs every scenario in devtools/scenarios.py: the three demo scenarios plus stress scenarios (look-alike parts,
+other skills, parts that arrive too late, no part in the manual, ...); --core runs only the demo three.
 Uses the real machine manual (manual/), as in the demo; --short-manual uses the 3-section test manual.
 Reads VLLM_BASE_URL, VLLM_API_KEY, VLLM_MODEL. With -v, prints the model's messages and reasoning between
 tool calls and writes each full run to eval-logs/.
@@ -26,69 +28,72 @@ from agent.local_agent import DEFAULT_MODEL, LocalAgent
 from agent.models import AgentResult
 from agent.prompts import thinking_chars
 from agent.times import utc
-from devtools.fakes import FAILURE, MANUAL, NOW, PART, SLOTS, FakeFactory, sample_alert
+from devtools.fakes import MANUAL, FakeFactory
+from devtools.scenarios import CORE, NOW, SCENARIOS, Scenario
 
-DELIVERY = NOW + timedelta(hours=24)  # the fake supplier's lead time
-REPAIR_MINUTES = 30  # from the manual's Tool wear section
 LOG_DIR = Path("eval-logs")
 
 
-def check(scenario: str, result: AgentResult, factory: FakeFactory) -> list[str]:
-    """Return the problems found; empty means the scenario passed."""
+def check(name: str, result: AgentResult, factory: FakeFactory) -> list[str]:
+    """Return the problems found against the scenario's expectations (devtools/scenarios.py); empty = passed."""
+    scenario = SCENARIOS[name]
     problems = [f"warning: {w}" for w in result.warnings]
     if result.status == "failed":
         return problems or ["agent failed"]
-    if result.part_number != PART:
-        problems.append(f"wrong part {result.part_number!r}, expected {PART}")
+    orders, bookings = list(factory.orders.values()), list(factory.bookings.values())
+    if scenario.part and result.part_number != scenario.part:
+        problems.append(f"wrong part {result.part_number!r}, expected {scenario.part}")
+    if not scenario.part and result.part_number:
+        problems.append(f"named part {result.part_number!r}, but the manual lists none for {scenario.failure_type}")
     if not result.operator_summary:
         problems.append("no operator summary")
-    bookings = list(factory.bookings.values())
-    wrong = [o["part_number"] for o in factory.orders.values() if o["part_number"] != PART]
+    wrong = [o["part_number"] for o in orders if o["part_number"] != scenario.part]
     if wrong:
         problems.append(f"ordered the wrong part: {', '.join(wrong)}")
-    if len(factory.orders) > 1 or len(bookings) > 1:
-        problems.append(f"drafted {len(factory.orders)} orders and {len(bookings)} bookings, expected at most 1 each")
-    problems += check_search_window(scenario, result)
+    if len(orders) > 1 or len(bookings) > 1:
+        problems.append(f"drafted {len(orders)} orders and {len(bookings)} bookings, expected at most 1 each")
+    if scenario.order is True and len(orders) != 1:
+        problems.append(f"expected 1 purchase order, got {len(orders)}")
+    if scenario.order is False and orders:
+        problems.append("ordered a part that is in stock" if scenario.part else "ordered a part the manual doesn't list")
 
-    if scenario == "out_of_stock":
-        if len(factory.orders) != 1:
-            problems.append(f"expected 1 purchase order, got {len(factory.orders)}")
+    if scenario.booking:
+        engineer, hours = scenario.booking
+        expected = NOW + timedelta(hours=hours)
         if result.status != "awaiting_approval" or len(bookings) != 1:
             problems.append(f"expected 1 booking awaiting approval, got {len(bookings)} ({result.status})")
-        elif utc(bookings[0]["start"]) < DELIVERY:
-            problems.append(f"booked at {bookings[0]['start']}, before the part arrives")
-    elif scenario == "in_stock":
-        if factory.orders:
-            problems.append("ordered a part that is in stock")
-        if result.status != "awaiting_approval" or len(bookings) != 1:
-            problems.append(f"expected 1 booking awaiting approval, got {len(bookings)} ({result.status})")
-        elif utc(bookings[0]["start"]) != utc(SLOTS["in_stock"][0]):
-            problems.append(f"booked {bookings[0]['start']}, not the earliest slot {SLOTS['in_stock'][0]}")
-    elif scenario == "no_engineer":
+        elif utc(bookings[0]["start"]) != expected or bookings[0]["engineer_id"] != engineer:
+            problems.append(f"booked {bookings[0]['engineer_id']} at {bookings[0]['start']}, "
+                            f"expected {engineer} at {expected.isoformat()} (the earliest slot that fits)")
+    else:
         if result.status != "escalated":
             problems.append(f"expected escalated, got {result.status}")
         if bookings:
             problems.append("booked an engineer although no slot fits")
-    return problems
+    return problems + check_search_window(scenario, result, ordered=bool(orders))
 
 
-def check_search_window(scenario: str, result: AgentResult) -> list[str]:
-    """The engineer search must cover delivery (or now, if in stock) → predicted failure, for the repair time.
-
-    A wrong window can still produce the right-looking outcome (no slots → escalate), so check it directly.
-    """
+def check_search_window(scenario: Scenario, result: AgentResult, ordered: bool) -> list[str]:
+    """The engineer search must cover delivery (or now, if nothing was ordered) → predicted failure, with the
+    manual's skill and repair time. A wrong window can still produce the right-looking outcome (no slots →
+    escalate), so check it directly."""
+    if scenario.search is None:
+        return []
     searches = [c for c in result.trace if c.tool == "find_free_engineers"]
     if not searches:
-        return ["never searched for an engineer"]
+        return ["never searched for an engineer"] if scenario.search_required else []
     args = searches[-1].arguments
-    expected_start = NOW if scenario == "in_stock" else DELIVERY
+    skill, minutes = scenario.search
+    expected_start = scenario.delivery if ordered else NOW
     problems = []
     if utc(args.get("earliest_start")) != expected_start:
         problems.append(f"engineer search starts {args.get('earliest_start')}, expected {expected_start.isoformat()}")
-    if utc(args.get("latest_end")) != FAILURE:
-        problems.append(f"engineer search ends {args.get('latest_end')}, expected {FAILURE.isoformat()}")
-    if args.get("duration_minutes") != REPAIR_MINUTES:
-        problems.append(f"engineer search asks for {args.get('duration_minutes')} min, the manual says {REPAIR_MINUTES}")
+    if utc(args.get("latest_end")) != scenario.failure_at:
+        problems.append(f"engineer search ends {args.get('latest_end')}, expected {scenario.failure_at.isoformat()}")
+    if args.get("duration_minutes") != minutes:
+        problems.append(f"engineer search asks for {args.get('duration_minutes')} min, the manual says {minutes}")
+    if args.get("skill") != skill:
+        problems.append(f"engineer search asks for skill {args.get('skill')!r}, the manual says {skill!r}")
     return problems
 
 
@@ -135,7 +140,8 @@ def _short(text: str, limit: int) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--scenario", choices=list(SLOTS), action="append")
+    parser.add_argument("--scenario", choices=list(SCENARIOS), action="append")
+    parser.add_argument("--core", action="store_true", help="only the three demo scenarios")
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("-v", "--verbose", action="store_true",
                         help="print the model's messages, reasoning and tool calls; save each run to eval-logs/")
@@ -147,13 +153,16 @@ def main() -> int:
           f"manual: {'short test manual' if args.short_manual else f'manual/ ({len(sections)} sections)'}")
     passed = total = calls_total = thinking_total = 0
     seconds_total = 0.0
-    for scenario in args.scenario or list(SLOTS):
+    names = args.scenario or (CORE if args.core else list(SCENARIOS))
+    by_scenario: dict[str, list[bool]] = {}
+    for scenario in names:
         for run in range(1, args.repeat + 1):
             factory = FakeFactory(scenario)
             agent = LocalAgent(factory=factory.client(), manual_sections=sections)
             start = time.time()
-            result = runner.run(sample_alert(), agent=agent, backend="local")
+            result = runner.run(SCENARIOS[scenario].alert(), agent=agent, backend="local")
             problems = check(scenario, result, factory)
+            by_scenario.setdefault(scenario, []).append(not problems)
             total += 1
             passed += not problems
             label = "PASS" if not problems else "FAIL"
@@ -166,6 +175,9 @@ def main() -> int:
             if args.verbose:
                 print_run(agent, result)
                 print(f"     full log: {save_run(scenario, run, agent, result, problems)}")
+    print("\nBy scenario:")
+    for name, runs in by_scenario.items():
+        print(f"  {sum(runs)}/{len(runs)}  {name}: {SCENARIOS[name].about}")
     print(f"\n{passed}/{total} passed | {calls_total} model calls, avg {seconds_total / max(calls_total, 1):.1f}s/call, "
           f"{thinking_total} chars of thinking")
     return 0 if passed == total else 1

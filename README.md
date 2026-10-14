@@ -67,10 +67,10 @@ set -a && . ./.env && set +a
 python scripts/check_vllm.py
 ```
 
-Then run the real model through the three demo scenarios (part out of stock, part in stock, no engineer free) against fake factory systems. It checks what the agent actually did, not just what it says:
+Then run the real model through the scenarios against fake factory systems. It checks what the agent actually did in the factory systems, not just what it says. There are the three demo scenarios (part out of stock, part in stock, no engineer free) and nine stress scenarios the prompt was not tuned on: look-alike parts, a pump that needs a mechanical engineer, parts that arrive after the failure, failure types the manual has no part for, an imminent failure, and an alert using the dataset's own failure code. The whole table is in `devtools/scenarios.py`.
 
 ```bash
-python -m scripts.eval_agent            # add --repeat 3 to check reliability, -v to see every tool call
+python -m scripts.eval_agent            # all 12 scenarios; --core for the demo three, --repeat 3 for reliability, -v to see every tool call
 ```
 
 ## 3. Run

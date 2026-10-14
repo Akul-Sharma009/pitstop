@@ -64,7 +64,8 @@ Rules:
 - When you escalate, the operator_summary must say plainly that no engineer is booked yet and that the
   manager has been asked to arrange the repair.
 - The operator_summary is for a machine operator: 3-5 short plain sentences, no jargon, covering what is
-  wrong, what has been done, and what happens next (including that the manager must approve).
+  wrong, what has been done, and what happens next (including that the manager must approve). If you booked
+  an engineer, name them and say when, copying the slot's *_when text.
 """
 
 # Evolus: the manual is the agent's knowledge library and there is no submit_plan tool; the final reply is the
@@ -93,7 +94,7 @@ SUBMIT_PLAN_SPEC = {
             "status": {"type": "string", "enum": ["awaiting_approval", "escalated"]},
             "diagnosis": {"type": "string"},
             "repair_steps": {"type": "array", "items": {"type": "string"}},
-            "part_number": {"type": "string"},
+            "part_number": {"type": ["string", "null"], "description": "null if the manual lists no part"},
             "part_name": {"type": "string"},
             "part_in_stock": {"type": "boolean"},
             "purchase_order_id": {"type": ["string", "null"]},
