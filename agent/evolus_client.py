@@ -38,7 +38,7 @@ def evolus_client() -> Any:
 PLAN_EXAMPLE = {
     "status": "awaiting_approval or escalated",
     "diagnosis": "what is wrong, in one sentence",
-    "repair_steps": ["step from the manual", "next step"],
+    "repair_steps": ["every repair step from the manual, in order, one per item"],
     "part_number": "part number from the manual",
     "part_name": "part name",
     "part_in_stock": False,

@@ -62,31 +62,30 @@ Needed for the submission (live URL) and for Evolus (MCP server must be publicly
 
 ## Status and risks
 
-Status as of **Mon 12 Oct** (update this section at the end of each day).
+Status as of **Wed 14 Oct** (update this section at the end of each day).
 
 | Part | Owner | Status |
 |---|---|---|
 | Repo, Docker, README, licence, contracts | Akul | Done, merged to `master` (PR #1) |
 | Agent service + guardrails | Akul | Done: 6/6 on `scripts.eval_agent` (Ollama stand-in, ~2 s per model call) |
-| MCP server | Akul | Done and tested over HTTP; not yet connected to Evolus |
+| MCP server | Akul | Done; connected to Evolus as a manual Connector (5 tools) through a Cloudflare tunnel |
 | Model choice | Akul | Qwen3-30B-A3B-Instruct-2507 (see Architecture) |
-| vLLM on AMD | Akul | **Blocked**: credits pending; `deploy/vllm/serve.sh` ready but untested on AMD |
-| Evolus | Akul | Workspace "Machine Whisperers" active (Developer Event, 50K credits); nothing built in it yet |
+| vLLM on AMD | Akul | **Blocked**: credits pending; `deploy/vllm/serve.sh` ready but untested on AMD. Decision 13 Oct: if no credits by **Fri 16 Oct**, pay for an MI300X (~$2/h, on only while used) |
+| Evolus | Akul | 14 Oct: thin path runs end to end through Evolus on the Ollama stand-in (branch `evolus-integration`): detector alert → agent "Pitstop maintenance planner" (knowledge library + factory connector) → order + booking → checked plan, no warnings. Trace comes from the mocks' call log |
 | Failure model + replay | Teammate, Akul | 13 Oct: teammate's model (branches `failure-predictive-model`, `sensor_script`) rebuilt as `detector/` on branch `detector-mocks`: one machine, Alert contract, remaining cutting time from the model. Ran on real AI4I 13 Oct: 7/9 caught, 113 false alarms; alert at wear 160 with 38 cutting min left; all three scenarios ran end to end in Docker on the Ollama stand-in |
 | Mock factory systems | Teammate, Akul | 13 Oct: `mocks/` service on branch `detector-mocks` (seed `mocks/seed.json`, using the teammate's fictional suppliers) |
 | Manual, screens | Teammate | Not started; the teammate's manual JSON is too short (see the 13 Oct review); `manual/cnc_mill_m01.md` is a 3-section placeholder |
 
-Not yet proven: anything on AMD, the Evolus ↔ MCP connection (transport may need SSE), the real parts running together, and `docker compose up` on a clean machine.
+Not yet proven: anything on AMD, the `in_stock` and `no_engineer` scenarios through Evolus, the screens, and `docker compose up` on a clean machine.
 
 Risks:
 - **AMD credits pending** (account validation submitted 12 Oct; AMD says up to 3–5 business days, which could be after the deadline). Chase them: devcloudrequests@amd.com, the lablab.ai Discord, and a teammate application. Until then, develop against a stand-in (Ollama + the same model, 4-bit, on a Mac, see `docs/setup-guide.md`). The stand-in is never presented as the AMD part; the demo, the video and Evolus must use vLLM on AMD.
 - **Thin path by Wed 14 Oct** needs AMD, Evolus and the teammate's three parts. Fallback: run the whole flow on the stand-in model and fake factory systems by Wednesday, then swap in AMD and the real parts as they land.
 
-Plan for **Tue 13 Oct**:
-1. Morning (Akul): send Claude the Evolus API docs and developer guide. Needed: auth header, calling an agent / the OpenAI-compatible endpoint, running a workflow, MCP connector URL/auth/transport, and the "Your models" fields. Ask in Discord whether Fireworks AI may stand in while AMD credits are pending. Check AMD credits. Don't create the Evolus API key until wiring it up.
-2. Claude: adapt `agent/evolus_client.py` to the real API, add an SSE endpoint to the MCP server if Evolus needs it, and update `docs/evolus-setup.md` with the real screen names.
-3. Akul in Evolus (~2–3 h): MCP server public from the Mac via a Cloudflare tunnel, then MCP connector → knowledge library (placeholder manual) → agent (`SYSTEM_PROMPT`) → workflow → API key → `AGENT_BACKEND=evolus` end-to-end test.
-4. Afternoon: review `failure-predictive-model` against `docs/contracts.md`; plan the detector, mocks, manual and screens joining up for the 14 Oct thin path.
+Plan for **Thu 15 Oct**:
+1. Evolus: rerun the three scenarios with `AGENT_BACKEND=evolus`; merge `evolus-integration`.
+2. Teammate: full manual (4–6 pages) and the approval / operator screens; review and join them up.
+3. Check AMD credits (cut-off Fri 16 Oct, see above).
 
 ## Work split
 
