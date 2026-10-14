@@ -8,6 +8,15 @@ from datetime import datetime, timezone
 from agent.models import AgentResult, Alert
 
 
+def _ok(call) -> bool:
+    return isinstance(call.result, dict) and "error" not in call.result
+
+
+def _in_stock(result: AgentResult) -> bool:
+    return any(c.tool == "check_inventory" and _ok(c) and c.result.get("part_number") == result.part_number
+               and c.result.get("quantity_on_hand", 0) > 0 for c in result.trace)
+
+
 def _seen_in_trace(value: str, result: AgentResult, tools: set[str]) -> bool:
     return any(call.tool in tools and value in json.dumps(call.result, default=str) for call in result.trace)
 
@@ -36,6 +45,13 @@ def check(result: AgentResult, alert: Alert) -> list[str]:
             warnings.append(f"Purchase order {result.purchase_order_id} was not created by a tool call.")
         if result.booking_id and not _seen_in_trace(result.booking_id, result, {"draft_booking"}):
             warnings.append(f"Booking {result.booking_id} was not created by a tool call.")
+        orders = [c.result for c in result.trace if c.tool == "draft_purchase_order" and _ok(c)
+                  and c.result.get("part_number") == result.part_number and c.result.get("status") != "rejected"]
+        if len(orders) > 1:
+            warnings.append(f"{len(orders)} orders were drafted for {result.part_number}: "
+                            f"{', '.join(o.get('po_id', '?') for o in orders)}. Only one is needed.")
+        if result.booking_id and result.part_number and not orders and not _in_stock(result):
+            warnings.append(f"A repair is booked, but {result.part_number} is neither in stock nor on order.")
 
     if result.booking_start and result.booking_end:
         start, end = _aware(result.booking_start), _aware(result.booking_end)

@@ -37,6 +37,19 @@ class Downtime(BaseModel):
     assumptions: str
 
 
+class Replan(BaseModel):
+    """The manager rejected part of a plan and asked for a new one (docs/contracts.md, replan)."""
+
+    feedback: str
+    purchase_order: dict[str, Any] | None = None  # the previous plan's order as the mocks have it now
+    booking: dict[str, Any] | None = None  # the previous plan's booking as the mocks have it now
+
+    def standing_order(self) -> dict[str, Any] | None:
+        """The previous order if the manager did not reject it: the new plan reuses it."""
+        order = self.purchase_order
+        return order if order and order.get("status") != "rejected" else None
+
+
 class AgentResult(BaseModel):
     status: Literal["awaiting_approval", "escalated", "failed"]
     machine_id: str

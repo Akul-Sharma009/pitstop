@@ -5,7 +5,8 @@ model and tune the prompt before the mocks and Evolus are ready.
 
 Usage: python -m scripts.eval_agent [--scenario NAME]... [--core] [--repeat N] [-v] [--short-manual]
 Runs every scenario in devtools/scenarios.py: the three demo scenarios plus stress scenarios (look-alike parts,
-other skills, parts that arrive too late, no part in the manual, ...); --core runs only the demo three.
+other skills, parts that arrive too late, no part in the manual, ...) and replans after a manager's rejection;
+--core runs only the demo three.
 Uses the real machine manual (manual/), as in the demo; --short-manual uses the 3-section test manual.
 Reads VLLM_BASE_URL, VLLM_API_KEY, VLLM_MODEL. With -v, prints the model's messages and reasoning between
 tool calls and writes each full run to eval-logs/.
@@ -23,9 +24,11 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from agent import manual, runner
 from agent.local_agent import DEFAULT_MODEL, LocalAgent
-from agent.models import AgentResult
+from agent.models import AgentResult, Replan
 from agent.prompts import thinking_chars
 from agent.times import utc
 from devtools.fakes import MANUAL, FakeFactory
@@ -40,7 +43,9 @@ def check(name: str, result: AgentResult, factory: FakeFactory) -> list[str]:
     problems = [f"warning: {w}" for w in result.warnings]
     if result.status == "failed":
         return problems or ["agent failed"]
-    orders, bookings = list(factory.orders.values()), list(factory.bookings.values())
+    # Drafts the manager rejected (in a replan scenario) don't count.
+    orders = [o for o in factory.orders.values() if o.get("status") != "rejected"]
+    bookings = [b for b in factory.bookings.values() if b.get("status") != "rejected"]
     if scenario.part and result.part_number != scenario.part:
         problems.append(f"wrong part {result.part_number!r}, expected {scenario.part}")
     if not scenario.part and result.part_number:
@@ -71,6 +76,27 @@ def check(name: str, result: AgentResult, factory: FakeFactory) -> list[str]:
         if bookings:
             problems.append("booked an engineer although no slot fits")
     return problems + check_search_window(scenario, result, ordered=bool(orders))
+
+
+def prepare(name: str, factory: FakeFactory) -> Replan | None:
+    """For a replan scenario, put the previous plan's drafts and the manager's decisions into the factory."""
+    previous = SCENARIOS[name].previous
+    if not previous:
+        return None
+    client, scenario = factory.client(), SCENARIOS[name]
+    order = client.draft_purchase_order(scenario.part, 1, "M-01", "Tool wear")
+    engineer, hours = previous.booking
+    start = NOW + timedelta(hours=hours)
+    booking = client.draft_booking(engineer, "M-01", start.isoformat(), (start + timedelta(minutes=30)).isoformat(),
+                                   "Replace end mill", order["po_id"])
+    decide = {"approved": "approve", "rejected": "reject"}
+    for path, status in [(f"/supplier/purchase-orders/{order['po_id']}", previous.order_status),
+                         (f"/calendar/bookings/{booking['booking_id']}", previous.booking_status)]:
+        if status in decide:
+            factory.handle(httpx.Request("POST", f"http://mocks{path}/{decide[status]}"))
+    factory.calls.clear()
+    return Replan(feedback=previous.feedback, purchase_order=factory.orders[order["po_id"]],
+                  booking=factory.bookings[booking["booking_id"]])
 
 
 def check_search_window(scenario: Scenario, result: AgentResult, ordered: bool) -> list[str]:
@@ -108,7 +134,7 @@ def speed(transcript: list[dict[str, Any]]) -> tuple[int, float, int]:
 
 def print_run(agent: LocalAgent, result: AgentResult) -> None:
     """The model's text and reasoning for each reply, followed by the tool results it got back."""
-    results = iter(result.trace)
+    results = iter([c for c in result.trace if not c.arguments.get("from_previous_plan")])  # not a call of this run
     for turn, reply in enumerate(agent.transcript, 1):
         if reply["reasoning"]:
             print(f"     [{turn}] thinking: {_short(reply['reasoning'], 600)}")
@@ -160,7 +186,8 @@ def main() -> int:
             factory = FakeFactory(scenario)
             agent = LocalAgent(factory=factory.client(), manual_sections=sections)
             start = time.time()
-            result = runner.run(SCENARIOS[scenario].alert(), agent=agent, backend="local")
+            replan = prepare(scenario, factory)
+            result = runner.run(SCENARIOS[scenario].alert(), agent=agent, backend="local", replan=replan)
             problems = check(scenario, result, factory)
             by_scenario.setdefault(scenario, []).append(not problems)
             total += 1

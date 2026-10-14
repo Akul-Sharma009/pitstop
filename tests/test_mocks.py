@@ -115,7 +115,7 @@ def test_call_log_keeps_errors_and_slot_shape():
     client.find_free_engineers("cnc_tooling", START.isoformat(), (START + timedelta(days=3)).isoformat(), 30)
     first, search = http.get("/admin/calls").json()["calls"]
     assert first["result"] == {"error": "404: unknown part"}
-    assert search["arguments"]["duration_minutes"] == 30 and len(search["result"]["slots"]) == 2
+    assert search["arguments"]["duration_minutes"] == 30 and len(search["result"]["slots"]) == 3  # Priya x2, Wei Ling
 
 
 def test_search_before_the_ordered_part_arrives_is_refused():
@@ -126,3 +126,14 @@ def test_search_before_the_ordered_part_arrives_is_refused():
     refused = client.find_free_engineers("cnc_tooling", START.isoformat(), later, 30)
     assert refused["error"].startswith("409") and order["expected_delivery"] in refused["error"]
     assert client.find_free_engineers("cnc_tooling", order["expected_delivery"], later, 30)["slots"]
+
+
+def test_one_open_order_per_part_and_machine():
+    factory, client = demo("out_of_stock")
+    first = client.draft_purchase_order("EM-1004", 1, "M-01", "tool wear")
+    again = client.draft_purchase_order("EM-1004", 1, "M-01", "tool wear")
+    assert again["error"].startswith("409") and first["po_id"] in again["error"]
+    assert "error" not in client.draft_purchase_order("EM-1006", 1, "M-01", "finishing tool")  # another part
+    http = httpx.Client(base_url="http://mocks", transport=httpx.MockTransport(factory.handle))
+    http.post(f"/supplier/purchase-orders/{first['po_id']}/reject")
+    assert "error" not in client.draft_purchase_order("EM-1004", 1, "M-01", "tool wear")  # the old one was rejected

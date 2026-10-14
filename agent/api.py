@@ -1,7 +1,8 @@
 """Agent service: POST an Alert, get back an AgentResult (docs/contracts.md).
 
 GET /incidents/latest returns the latest alert and its plan (null while the agent is still planning), so the
-screens update by themselves when the detector fires.
+screens update by themselves when the detector fires. POST /incidents/replan plans the latest alert again
+after the manager rejected part of the plan, with their reason.
 
 Run: uvicorn agent.api:app --port 8002
 """
@@ -16,7 +17,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.concurrency import run_in_threadpool
 
 from agent import manual, runner
-from agent.models import AgentResult, Alert
+from agent.models import AgentResult, Alert, Replan
 
 app = FastAPI(title="Pitstop agent")
 latest: dict[str, Any] = {}  # the demo handles one machine at a time
@@ -29,20 +30,38 @@ def health() -> dict[str, str | int]:
             "manual_sections": sections}
 
 
-@app.post("/incidents", response_model=AgentResult)
-async def create_incident(alert: Alert) -> AgentResult:
+async def _plan(alert: Alert, replan: Replan | None = None) -> AgentResult:
     received = datetime.now(timezone.utc).isoformat()
-    latest.update(alert=alert.model_dump(mode="json"), result=None, received_at=received)
+    previous = latest.get("result") if replan else None
+    latest.clear()
+    latest.update(alert=alert.model_dump(mode="json"), result=None, received_at=received,
+                  feedback=replan.feedback if replan else None, previous=previous)
     # The LLM loop is blocking and can take a minute; keep the event loop free.
-    result = await run_in_threadpool(runner.run, alert)
+    result = await run_in_threadpool(runner.run, alert, None, None, replan)
     if latest.get("received_at") == received:  # a newer alert may have arrived meanwhile
         latest["result"] = result.model_dump(mode="json")
     return result
 
 
+@app.post("/incidents", response_model=AgentResult)
+async def create_incident(alert: Alert) -> AgentResult:
+    return await _plan(alert)
+
+
+@app.post("/incidents/replan", response_model=AgentResult)
+async def replan_incident(replan: Replan) -> AgentResult:
+    """Plan the latest alert again with the manager's feedback (sent by the app after a rejection)."""
+    if not latest.get("alert"):
+        raise HTTPException(404, "no alert to replan")
+    if latest.get("result") is None:
+        raise HTTPException(409, "the agent is still planning")
+    return await _plan(Alert(**latest["alert"]), replan)
+
+
 @app.get("/incidents/latest")
 def latest_incident() -> dict[str, Any]:
-    """{"alert", "result" (null while planning), "received_at"}; 404 before the first alert."""
+    """{"alert", "result" (null while planning), "received_at", "feedback" and "previous" (the plan the
+    manager rejected, when replanning)}; 404 before the first alert."""
     if not latest:
         raise HTTPException(404, "no alert yet")
     return latest

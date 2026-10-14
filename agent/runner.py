@@ -9,7 +9,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from agent import guard
-from agent.models import AgentResult, Alert, Downtime, ToolCall
+from agent.models import AgentResult, Alert, Downtime, Replan, ToolCall
 from agent.reconcile import reconcile
 
 log = logging.getLogger(__name__)
@@ -70,12 +70,16 @@ def failed(alert: Alert, backend: str, reason: str, trace: list[ToolCall] | None
     )
 
 
-def run(alert: Alert, agent: Any = None, backend: str | None = None) -> AgentResult:
+def run(alert: Alert, agent: Any = None, backend: str | None = None, replan: Replan | None = None) -> AgentResult:
+    """Plan for an alert; with `replan`, plan again after the manager's feedback on the previous plan."""
     backend = backend or os.environ.get("AGENT_BACKEND", "local")
     try:
         agent = agent or make_agent(backend)
-        plan, trace = agent.run(alert)
+        plan, trace = agent.run(alert, replan) if replan else agent.run(alert)
     except Exception as exc:  # any backend failure becomes a visible, escalated result
         log.exception("Agent run failed")
         return failed(alert, backend, f"{type(exc).__name__}: {exc}")
+    if replan and (order := replan.standing_order()):
+        # The previous plan's order still stands: it is part of this plan, and the trace says where it came from.
+        trace = [ToolCall(tool="draft_purchase_order", arguments={"from_previous_plan": True}, result=order), *trace]
     return finalize(plan, trace, alert, backend)

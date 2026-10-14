@@ -66,7 +66,7 @@ Status as of **Wed 14 Oct** (update this section at the end of each day).
 
 | Part | Owner | Status |
 |---|---|---|
-| Repo, Docker, README, licence, contracts | Akul | Done, on `master` (PRs #1–#5) |
+| Repo, Docker, README, licence, contracts | Akul | Done, on `master` (PRs #1–#7) |
 | Agent service + guardrails | Akul | Done: 6/6 on `scripts.eval_agent` (Ollama stand-in, ~2 s per model call) |
 | MCP server | Akul | Done; connected to Evolus as a manual Connector (5 tools) through a Cloudflare tunnel |
 | Model choice | Akul | Qwen3-30B-A3B-Instruct-2507 (see Architecture) |
@@ -75,6 +75,7 @@ Status as of **Wed 14 Oct** (update this section at the end of each day).
 | Failure model + replay | Teammate, Akul | Done, on `master` (PR #2): teammate's model rebuilt as `detector/`; one machine, Alert contract, remaining cutting time from the model. Real AI4I: 7/9 caught, 113 false alarms; alert at wear 160 with 40 cutting min left |
 | Mock factory systems | Teammate, Akul | Done, on `master` (PR #2): `mocks/` service, seed `mocks/seed.json` (teammate's fictional suppliers); logs agent calls; enforces the repair window |
 | Manual, screens | Teammate, Akul | Done (PR #5): teammate's manual (7 failure types, cleaned of implementation notes) and screens, served by the `app` service at :8003. Verified live 14 Oct with Evolus: eval 6/6 on the new manual (~2.9 s per call), screens follow the run, manager approved both drafts |
+| Stress tests, replan on reject | Akul | Done (PRs #6, #7): 14 eval scenarios (3 demo, 9 stress, 2 replan), 28/28 on the Ollama stand-in; replan verified live in Evolus (manager rejects with a reason → new plan, standing order reused, enforced by the mocks' one-open-order rule) |
 
 Not yet proven: anything on AMD, and `docker compose up` on a clean machine.
 
@@ -119,7 +120,7 @@ Priority if time runs short: stress-test fixes → replan on reject → AMD → 
 - **A README that runs** — its commands must work from a clean clone; re-test before submission.
 - **Environment variables for all keys and endpoints** (vLLM, Evolus, MCP token, etc.). `.env.example` holds placeholders; `.env` is gitignored. **Never commit secrets** — check the diff before every push.
 - Tests with `pytest`; tests must not need the GPU, Evolus or network (use the fakes in `devtools/fakes.py`, which also implement the mock API contract).
-- After changing the prompt, tools or model, run `python -m scripts.eval_agent` against the real vLLM endpoint (12 scenarios from `devtools/scenarios.py`: 3 demo + 9 stress; checks what the agent actually did). New behaviour gets a new scenario there.
+- After changing the prompt, tools or model, run `python -m scripts.eval_agent` against the real vLLM endpoint (14 scenarios from `devtools/scenarios.py`: 3 demo, 9 stress, 2 replan; checks what the agent actually did). New behaviour gets a new scenario there.
 - Evolus setup steps and open questions: `docs/evolus-setup.md`.
 - **Branch names**: short and descriptive so a third person understands them (e.g. `agent-mcp-server`, `thin-path`, `evolus-integration`). No `claude/` prefix and no random auto-generated names.
 - Public GitHub repo, MIT licence, original work.

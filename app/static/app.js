@@ -39,12 +39,20 @@ const value = (x) => (x === null || x === undefined || x === '' ? '—' : String
 const date = (x) => (x
   ? new Date(x).toLocaleString('en-GB', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) + ' UTC'
   : '—');
-const span = (start, end) => (start ? `${date(start)} – ${date(end).replace(/^.*, /, '')}` : '—');
+// A time window: the end shows only its time (browsers word dates differently, e.g. Safari's "Thu 15 Oct at 20:00").
+const clock = (x) => new Date(x).toLocaleTimeString('en-GB', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit' }) + ' UTC';
+const span = (start, end) => (start ? `${date(start)} – ${end ? clock(end) : '—'}` : '—');
 function setText(id, v) { $(id).textContent = value(v); }
 
 function setStatus(status) {
   $('status').textContent = STATUS[status] || status || 'Waiting for an alert';
   $('status').dataset.status = status || '';
+}
+
+// After a rejection with a reason, the plan on screen is the agent's new plan: say why there is one.
+function showFeedback(feedback) {
+  $('feedback').hidden = !feedback;
+  $('feedback').textContent = feedback ? `New plan after the manager's feedback: "${feedback}"` : '';
 }
 
 function showAlert(alert) {
@@ -68,7 +76,7 @@ function load(data, demo = false) {
   $('op-update').hidden = true;
   setStatus(data.status);
   setText('machine', data.machine_id);
-  setText('part', data.part_number ? `${data.part_number} · ${data.part_name || ''}` : 'Not selected');
+  setText('part', data.part_number ? [data.part_number, data.part_name].filter(Boolean).join(' · ') : 'Not selected');
   setText('planned', data.downtime?.planned_min != null ? `${data.downtime.planned_min} min` : '—');
   setText('diagnosis', data.diagnosis);
   $('steps').replaceChildren(...(data.repair_steps || []).map((step) => Object.assign(document.createElement('li'), { textContent: step })));
@@ -79,8 +87,12 @@ function load(data, demo = false) {
   $('escalation-row').hidden = !data.escalation_reason;
   setText('escalation', data.escalation_reason);
 
-  setText('po-id', data.purchase_order_id || 'No purchase order');
-  setText('booking-id', data.booking_id || 'No booking');
+  setText('po-id', data.purchase_order_id
+    ? [data.purchase_order_id, data.part_number, data.expected_delivery && `arrives ${date(data.expected_delivery)}`].filter(Boolean).join(' · ')
+    : 'No purchase order');
+  setText('booking-id', data.booking_id
+    ? [data.booking_id, data.engineer_name, span(data.booking_start, data.booking_end)].filter((x) => x && x !== '—').join(' · ')
+    : 'No booking');
   for (const [kind, id] of [['po', data.purchase_order_id], ['booking', data.booking_id]]) {
     $(`${kind}-approve`).parentElement.hidden = false;
     $(`${kind}-state`).textContent = id && !demo ? 'pending approval' : '';
@@ -139,6 +151,12 @@ const API = { po: 'purchase-orders', booking: 'bookings' };
 const decided = {}; // po / booking → status in the mock factory
 
 function showDecision(kind, item) {
+  if (kind === 'po' && item.po_id) {
+    // The order as the supplier has it: what the manager is paying for.
+    setText('po-id', [item.po_id, `${item.quantity} × ${item.part_number}`, item.supplier,
+      item.total_price != null && `${item.currency} ${Number(item.total_price).toLocaleString()}`,
+      `arrives ${date(item.expected_delivery)}`].filter(Boolean).join(' · '));
+  }
   $(`${kind}-state`).textContent = item.status.replace('_', ' ');
   $(`${kind}-state`).dataset.status = item.status;
   const open = item.status === 'pending_approval';
@@ -147,6 +165,7 @@ function showDecision(kind, item) {
     if (!open) disarm($(`${kind}-${action}`)); // a refresh while pending keeps a half-confirmed click
   }
   $(`${kind}-approve`).parentElement.hidden = !open; // a decided draft has no buttons left
+  if (!open) $(`${kind}-reason`).hidden = true;
   decided[kind] = item.status;
   // Once the manager has decided every draft of an awaiting plan, the status says so.
   const drafts = [['po', result?.purchase_order_id], ['booking', result?.booking_id]].filter(([, id]) => id).map(([k]) => decided[k]);
@@ -164,12 +183,21 @@ function showDecision(kind, item) {
 }
 
 // Two clicks instead of a browser confirm() dialog, which automated browsers (and demo recordings) suppress.
+// A reject also asks for a reason: with one, the agent makes a new plan (replan); it stays armed while typing.
 function arm(button, action) {
   button.dataset.armed = '1';
   button.dataset.label = button.textContent;
-  button.textContent = action === 'approve' ? 'Click to confirm' : 'Click to reject';
+  button.textContent = action === 'approve' ? 'Click to confirm' : 'Confirm reject';
   button.classList.add('armed');
-  button.timer = setTimeout(() => disarm(button), 5000);
+  if (action === 'approve') button.timer = setTimeout(() => disarm(button), 5000);
+  else {
+    const reason = $(button.id.replace('-reject', '-reason'));
+    reason.hidden = false;
+    reason.focus();
+    const label = () => { button.textContent = reason.value.trim() ? 'Reject and replan' : 'Reject (no new plan)'; };
+    reason.oninput = label;
+    label();
+  }
 }
 
 function disarm(button) {
@@ -178,6 +206,7 @@ function disarm(button) {
   delete button.dataset.armed;
   button.textContent = button.dataset.label;
   button.classList.remove('armed');
+  if (button.id.endsWith('-reject')) $(button.id.replace('-reject', '-reason')).hidden = true;
 }
 
 async function refreshItem(kind, id) {
@@ -197,14 +226,22 @@ async function decision(kind, action) {
     arm(button, action);
     return;
   }
+  const reason = action === 'reject' ? $(`${kind}-reason`).value.trim() : '';
   disarm(button);
   $(`${kind}-approve`).disabled = $(`${kind}-reject`).disabled = true;
   try {
-    const response = await fetch(`/api/${API[kind]}/${encodeURIComponent(id)}/${action}`, { method: 'POST' });
+    const response = await fetch(`/api/${API[kind]}/${encodeURIComponent(id)}/${action}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }),
+    });
     const body = await response.json();
     if (!response.ok) throw new Error(body.detail || `HTTP ${response.status}`);
     showDecision(kind, body);
-    $('message').textContent = `${label[0].toUpperCase()}${label.slice(1)} ${id}: ${body.status}.`;
+    $(`${kind}-reason`).value = '';
+    $('message').textContent = reason
+      ? `${label[0].toUpperCase()}${label.slice(1)} ${id} rejected. The agent is making a new plan with your reason…`
+      : action === 'reject'
+        ? `${label[0].toUpperCase()}${label.slice(1)} ${id} rejected. No reason given, so the agent won't make a new plan.`
+        : `${label[0].toUpperCase()}${label.slice(1)} ${id}: ${body.status}.`;
   } catch (e) {
     $('message').textContent = `Request failed: ${e.message}`;
     refreshItem(kind, id);
@@ -229,6 +266,7 @@ async function poll() {
     }
     seen = key;
     showAlert(latest.alert);
+    showFeedback(latest.feedback);
     if (latest.result) load(latest.result);
     else if (latest.alert) clearPlan('planning');
   } catch {

@@ -81,7 +81,7 @@ docker compose up --build    # mock factory systems + MCP server + agent
 
 - Mock factory systems: `http://localhost:8000` (seed data in `mocks/seed.json`)
 - MCP server: `http://localhost:8001/mcp` (streamable HTTP; send `Authorization: Bearer $MCP_API_TOKEN` if set)
-- **Screens: `http://localhost:8003`**: manager approval and operator summary (by @pradeepshenram). They follow the latest alert by themselves; the manager approves or rejects each draft there.
+- **Screens: `http://localhost:8003`**: manager approval and operator summary (by @pradeepshenram). They follow the latest alert by themselves; the manager approves or rejects each draft there. **Reject with a reason** ("Priya is on leave on Thursday") and the agent makes a new plan that respects it, keeping the parts of the old plan that still stand.
 - Agent service: `http://localhost:8002/docs`
 
 **Run the agent in Evolus** (`AGENT_BACKEND=evolus`): the Evolus agent uses our model, the manual as its knowledge library and our MCP server as a Connector. Setup, the tunnel for development and the HTTPS host for the demo: [`docs/evolus-setup.md`](docs/evolus-setup.md).
