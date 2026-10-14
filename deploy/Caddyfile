@@ -9,8 +9,9 @@
 	handle /v1* {
 		reverse_proxy host.docker.internal:{$VLLM_PORT:8080}
 	}
-	# The app's screens get a route here once app/ exists.
+	# The screens: manager approval and operator summary. They can approve drafts, so put basic_auth here
+	# before sharing the address widely.
 	handle {
-		respond "Pitstop" 200
+		reverse_proxy app:8003
 	}
 }

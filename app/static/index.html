@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pitstop | Maintenance Console</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="shell">
+  <aside>
+    <div class="brand">◈ PITSTOP <small>MAINTENANCE INTELLIGENCE</small></div>
+    <div class="nav">
+      <button class="nav-btn active" data-page="approval">▣ &nbsp; Manager approval</button>
+      <button class="nav-btn" data-page="operator">▤ &nbsp; Operator summary</button>
+    </div>
+    <div class="aside-foot">CNC Mill M-01 · Demo console<br>Fictional factory data</div>
+  </aside>
+  <main>
+    <header>
+      <div>
+        <div class="eyebrow">PITSTOP / CNC MILL M-01</div>
+        <h1 id="page-title">Maintenance approval</h1>
+        <p id="page-subtitle">Review the AI maintenance plan before any action is authorized.</p>
+      </div>
+      <span id="status" class="pill">Waiting for an alert</span>
+    </header>
+
+    <section class="source alert-bar">
+      <div>
+        <small class="muted">Latest alert</small>
+        <div id="alert-text">No alert yet. Run the detector replay to start.</div>
+      </div>
+      <span id="live" class="muted">Connecting…</span>
+    </section>
+
+    <div id="approval-page">
+      <div class="metrics">
+        <article class="metric"><small>Machine</small><strong id="machine">—</strong></article>
+        <article class="metric"><small>Selected part</small><strong id="part">—</strong></article>
+        <article class="metric"><small>Planned repair</small><strong id="planned">—</strong></article>
+      </div>
+      <div class="cols">
+        <article class="panel">
+          <h2>Agent's maintenance plan</h2>
+          <p id="diagnosis" class="lead">The plan appears here when the agent has finished.</p>
+          <ol id="steps"></ol>
+          <div class="detail"><span>Part in stock</span><b id="stock">—</b></div>
+          <div class="detail"><span>Expected delivery</span><b id="delivery">—</b></div>
+          <div class="detail"><span>Engineer</span><b id="engineer">—</b></div>
+          <div class="detail"><span>Booking window</span><b id="window">—</b></div>
+          <div class="detail" id="escalation-row" hidden><span>Escalated because</span><b id="escalation">—</b></div>
+        </article>
+        <article class="panel">
+          <h2>Manager decisions</h2>
+          <p class="muted">The agent only drafts. Nothing is ordered or booked until you approve it here.</p>
+          <div class="decision">
+            <div><b>Purchase order</b> <span id="po-state" class="state"></span><div id="po-id" class="muted">No order</div></div>
+            <div class="buttons"><button id="po-approve" disabled>Approve</button><button id="po-reject" class="danger" disabled>Reject</button></div>
+          </div>
+          <div class="decision">
+            <div><b>Engineer booking</b> <span id="booking-state" class="state"></span><div id="booking-id" class="muted">No booking</div></div>
+            <div class="buttons"><button id="booking-approve" disabled>Approve</button><button id="booking-reject" class="danger" disabled>Reject</button></div>
+          </div>
+          <p id="message" class="note" role="status"></p>
+        </article>
+      </div>
+      <div class="cols">
+        <article class="panel"><h2>Warnings</h2><ul id="warnings" class="warning-list"><li>No plan loaded.</li></ul></article>
+        <article class="panel"><h2>What the agent did</h2><div id="trace" class="trace muted">No tool calls yet.</div></article>
+      </div>
+    </div>
+
+    <div id="operator-page" hidden>
+      <div class="metrics">
+        <article class="metric"><small>Planned downtime</small><strong id="op-planned">—</strong></article>
+        <article class="metric"><small>Downtime saved</small><strong id="op-saved">—</strong></article>
+        <article class="metric"><small>Estimated savings</small><strong id="op-money">—</strong></article>
+      </div>
+      <article class="panel">
+        <h2>What the operator needs to know</h2>
+        <p id="op-summary" class="summary">The summary appears here when the agent has finished.</p>
+        <p id="op-update" class="update" hidden></p>
+        <div class="detail"><span>Repair status</span><b id="op-status">—</b></div>
+        <div class="detail"><span>Machine</span><b id="op-machine">—</b></div>
+        <div class="detail"><span>Predicted failure</span><b id="op-failure">—</b></div>
+        <div class="detail"><span>Engineer</span><b id="op-engineer">—</b></div>
+        <div class="detail"><span>Appointment</span><b id="op-window">—</b></div>
+      </article>
+      <article class="panel">
+        <h2>How the estimate was calculated</h2>
+        <p id="op-assumptions" class="muted">No estimate yet.</p>
+        <p class="note">Downtime savings are estimates from stated assumptions, not measured outcomes.</p>
+      </article>
+    </div>
+
+    <details class="paste">
+      <summary>Load a result by hand</summary>
+      <label for="result-json">AgentResult JSON from <code>POST /incidents</code></label>
+      <textarea id="result-json" rows="4" placeholder='{"status":"awaiting_approval","machine_id":"M-01",...}'></textarea>
+      <div class="actions">
+        <button id="load-json">Load AgentResult</button>
+        <button id="load-sample" class="secondary">Load demo result</button>
+      </div>
+    </details>
+
+    <footer>Demo-only dashboard · No real machinery or purchases are controlled · Screens by our teammate</footer>
+  </main>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

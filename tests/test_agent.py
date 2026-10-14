@@ -283,3 +283,16 @@ def test_downtime_saved_from_the_booking_and_stated_assumptions(monkeypatch):
 def test_no_downtime_figure_without_a_booking():
     result, _ = run_local(thin_path_script(), scenario="no_engineer")
     assert result.status == "escalated" and result.downtime is None
+
+
+def test_latest_incident_is_kept_for_the_screens(monkeypatch):
+    monkeypatch.setattr(api, "latest", {})
+    monkeypatch.setattr(runner, "make_agent", lambda backend=None: LocalAgent(
+        llm=ScriptedLLM(thin_path_script()), factory=FakeFactory().client(), manual_sections=MANUAL, model="test"
+    ))
+    client = TestClient(api.app)
+    assert client.get("/incidents/latest").status_code == 404
+    client.post("/incidents", json=make_alert().model_dump(mode="json"))
+    latest = client.get("/incidents/latest").json()
+    assert latest["alert"]["machine_id"] == "M-01" and latest["result"]["booking_id"] == "BK-0001"
+    assert latest["result"]["downtime"]["saved_h"] == 7.5

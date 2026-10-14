@@ -3,7 +3,8 @@
 Checks what the agent actually did in the factory systems, not only what it claims. Use it to pick the
 model and tune the prompt before the mocks and Evolus are ready.
 
-Usage: python -m scripts.eval_agent [--scenario out_of_stock|in_stock|no_engineer] [--repeat N] [-v]
+Usage: python -m scripts.eval_agent [--scenario out_of_stock|in_stock|no_engineer] [--repeat N] [-v] [--short-manual]
+Uses the real machine manual (manual/), as in the demo; --short-manual uses the 3-section test manual.
 Reads VLLM_BASE_URL, VLLM_API_KEY, VLLM_MODEL. With -v, prints the model's messages and reasoning between
 tool calls and writes each full run to eval-logs/.
 """
@@ -20,7 +21,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from agent import runner
+from agent import manual, runner
 from agent.local_agent import DEFAULT_MODEL, LocalAgent
 from agent.models import AgentResult
 from agent.prompts import thinking_chars
@@ -138,15 +139,18 @@ def main() -> int:
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("-v", "--verbose", action="store_true",
                         help="print the model's messages, reasoning and tool calls; save each run to eval-logs/")
+    parser.add_argument("--short-manual", action="store_true", help="use the 3-section test manual (devtools.fakes)")
     args = parser.parse_args()
+    sections = MANUAL if args.short_manual else manual.load_sections("manual")
 
-    print(f"Model: {os.environ.get('VLLM_MODEL', DEFAULT_MODEL)} at {os.environ.get('VLLM_BASE_URL')}")
+    print(f"Model: {os.environ.get('VLLM_MODEL', DEFAULT_MODEL)} at {os.environ.get('VLLM_BASE_URL')}, "
+          f"manual: {'short test manual' if args.short_manual else f'manual/ ({len(sections)} sections)'}")
     passed = total = calls_total = thinking_total = 0
     seconds_total = 0.0
     for scenario in args.scenario or list(SLOTS):
         for run in range(1, args.repeat + 1):
             factory = FakeFactory(scenario)
-            agent = LocalAgent(factory=factory.client(), manual_sections=MANUAL)
+            agent = LocalAgent(factory=factory.client(), manual_sections=sections)
             start = time.time()
             result = runner.run(sample_alert(), agent=agent, backend="local")
             problems = check(scenario, result, factory)

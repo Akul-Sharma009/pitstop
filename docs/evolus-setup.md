@@ -51,7 +51,7 @@ With vLLM on AMD, use the HTTPS host from `setup-guide.md` steps 3–5 instead (
 
 ## 3. Building blocks
 
-- [ ] **Knowledge library**: upload `manual/*.md` (or a PDF of it) with language English.
+- [x] **Knowledge library**: upload `manual/cnc_mill_m01.md` (the upload screen had no language option; retrieval works in English). Re-upload it whenever the manual changes: delete the old document first, so the agent never sees two versions.
 - [x] **Factory tools**: *Your company → Connectors → Add manually*: type HTTP, URL `$T/mcp`, header `Authorization: Bearer $MCP_API_TOKEN`, credentials Fixed. Evolus lists 5 tools: `check_inventory`, `get_supplier_quote`, `draft_purchase_order`, `find_free_engineers`, `draft_booking` (it files the two `draft_` tools under "Mail"; harmless). There is no approve tool, on purpose. Evolus strips spaces from connector names. When the tunnel address changes, edit the URL here and in Your models.
 - [ ] **Agent**: our model; instructions = the system prompt; attach the library and the tools.
   Print the instructions with `python scripts/evolus_text.py prompt` (the Evolus version of the system prompt: the manual is the knowledge library, and the final reply is the JSON plan instead of a `submit_plan` call).

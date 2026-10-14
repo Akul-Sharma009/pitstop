@@ -23,15 +23,15 @@ sensor replay (AI4I) → failure model → app ──alert──▶ agent servic
 | Agent service (`AGENT_BACKEND=local` or `evolus`) | `agent/` | 8002 |
 | Mock factory systems (inventory, supplier, calendar) | `mocks/` | 8000 |
 | Failure model + sensor replay | `detector/` | – |
-| Approval screen + operator summary | `app/` (in progress) | – |
+| Approval screen + operator summary | `app/` | 8003 |
 
 **About the data:** [AI4I 2020](https://archive.ics.uci.edu/dataset/601) (UCI, CC BY 4.0) is a synthetic predictive maintenance dataset modelled on a real milling machine. Its rows are independent snapshots, not a time series, so:
 
 - The live feed for M-01 is a sequence we build from held-out AI4I rows (healthy readings in order of rising tool wear). The model never saw them in training.
-- The failure model (a random forest on the five sensor readings, by our teammate) flags tool-wear failure. It doesn't predict time by itself. We ask it at what tool wear it starts flagging failure under the current readings; the gap to the current wear is the remaining cutting time. One odd reading can swing that estimate, so the model's score is averaged over the last three readings. Calendar time assumes 20 cutting minutes per day (`CUTTING_MIN_PER_DAY`).
+- The failure model (a random forest on the five sensor readings, by our teammate @pradeepshenram) flags tool-wear failure. It doesn't predict time by itself. We ask it at what tool wear it starts flagging failure under the current readings; the gap to the current wear is the remaining cutting time. One odd reading can swing that estimate, so the model's score is averaged over the last three readings. Calendar time assumes 20 cutting minutes per day (`CUTTING_MIN_PER_DAY`).
 - The model's score is not a calibrated probability. On the 2,000 held-out rows it catches 7 of the 9 tool-wear failures, with 113 false alarms (`python -m detector.train`, which also prints the scikit-learn version; the teammate's notebook got 6 of 9 and 100 with the same settings, probably on another version).
 
-The machine manual (`manual/`, a short placeholder for now) and the factory systems are mock-ups we wrote; suppliers and people are fictional.
+The machine manual (`manual/`, 7 failure types, written by @pradeepshenram) and the factory systems are mock-ups we wrote; suppliers and people are fictional.
 
 ## 1. Serve the model on AMD Developer Cloud
 
@@ -81,6 +81,7 @@ docker compose up --build    # mock factory systems + MCP server + agent
 
 - Mock factory systems: `http://localhost:8000` (seed data in `mocks/seed.json`)
 - MCP server: `http://localhost:8001/mcp` (streamable HTTP; send `Authorization: Bearer $MCP_API_TOKEN` if set)
+- **Screens: `http://localhost:8003`**: manager approval and operator summary (by @pradeepshenram). They follow the latest alert by themselves; the manager approves or rejects each draft there.
 - Agent service: `http://localhost:8002/docs`
 
 **Run the agent in Evolus** (`AGENT_BACKEND=evolus`): the Evolus agent uses our model, the manual as its knowledge library and our MCP server as a Connector. Setup, the tunnel for development and the HTTPS host for the demo: [`docs/evolus-setup.md`](docs/evolus-setup.md).

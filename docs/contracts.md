@@ -35,6 +35,8 @@ detector ──Alert──▶ app ──Alert──▶ agent service ──tools
 
 ## 2. AgentResult (agent service → app)
 
+`GET {AGENT_URL}/incidents/latest` returns `{"alert", "result", "received_at"}` for the latest alert; `result` is `null` while the agent is still planning; 404 before the first alert. The screens follow it (section 5).
+
 Response of `POST /incidents`:
 
 ```json
@@ -129,3 +131,13 @@ Engineer slots are whole hours after the last reset (`hours_after_reset` in the 
 
 Streamable HTTP at `{MCP_URL}/mcp`, optional bearer token `MCP_API_TOKEN`. Tools (one per **agent** endpoint above):
 `check_inventory`, `get_supplier_quote`, `draft_purchase_order`, `find_free_engineers`, `draft_booking`.
+
+## 5. Screens (`app/`, port 8003)
+
+The manager approval screen and the operator summary (`app/static`), served with a small API so the page needs one address. This is the app side of the approval boundary.
+
+| Method | Path | Does |
+|---|---|---|
+| GET | `/api/latest` | `GET {AGENT_URL}/incidents/latest`; `{"alert": null, "result": null}` before the first alert |
+| GET | `/api/purchase-orders/{id}`, `/api/bookings/{id}` | the order or booking from the mocks (its approval status) |
+| POST | `/api/purchase-orders/{id}/approve\|reject`, `/api/bookings/{id}/approve\|reject` | the manager's decision, to the mocks' **app only** endpoints |
