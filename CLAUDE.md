@@ -74,9 +74,9 @@ Status as of **Wed 14 Oct** (update this section at the end of each day).
 | Evolus | Akul | 14 Oct: all three scenarios run end to end through Evolus on the Ollama stand-in, no warnings (PR #3): detector alert → agent "Pitstop maintenance planner" (knowledge library + factory Connector) → order + booking → checked plan. Trace comes from the mocks' call log |
 | Failure model + replay | Teammate, Akul | Done, on `master` (PR #2): teammate's model rebuilt as `detector/`; one machine, Alert contract, remaining cutting time from the model. Real AI4I: 7/9 caught, 113 false alarms; alert at wear 160 with 40 cutting min left |
 | Mock factory systems | Teammate, Akul | Done, on `master` (PR #2): `mocks/` service, seed `mocks/seed.json` (teammate's fictional suppliers); logs agent calls; enforces the repair window |
-| Manual, screens | Teammate | Not started; the teammate's manual JSON is too short (see the 13 Oct review); `manual/cnc_mill_m01.md` is a 3-section placeholder |
+| Manual, screens | Teammate, Akul | 14 Oct: teammate's manual (7 failure types) and screens integrated on branch `manual-and-screens`: manual cleaned of implementation notes; screens served by the `app` service (port 8003), following `GET /incidents/latest`, approve/reject through the app. Checked in a browser against fakes; not yet with the live stack |
 
-Not yet proven: anything on AMD, the screens, the full manual, and `docker compose up` on a clean machine.
+Not yet proven: anything on AMD, the screens with the live stack, the new manual with the model (local eval and Evolus library), and `docker compose up` on a clean machine.
 
 Open decisions: hosting for the live URL (recommended: one small VM, or the AMD instance while it's on, with `docker compose --profile public`); the deadline's time zone and the lablab submission checklist; whether the operator summary names the engineer (a `SYSTEM_PROMPT` change: rerun the local eval and re-paste the Evolus prompt).
 
@@ -85,7 +85,7 @@ Risks:
 - **Thin path by Wed 14 Oct** needs AMD, Evolus and the teammate's three parts. Fallback: run the whole flow on the stand-in model and fake factory systems by Wednesday, then swap in AMD and the real parts as they land.
 
 Plan for **Thu 15 Oct**:
-1. Teammate: full manual (4–6 pages) and the approval / operator screens (they show `downtime` too); review and join them up.
+1. Akul: on `manual-and-screens`, rerun `python -m scripts.eval_agent` (now uses the real manual), re-upload `manual/cnc_mill_m01.md` to the Evolus library, and run the detector with the screens open at localhost:8003; approve both drafts. Then merge.
 2. Check AMD credits (cut-off Fri 16 Oct, see above); decide hosting with it.
 3. Rough backup video of the current flow (internal only: it uses the stand-in).
 4. Delete merged branches on GitHub: `agent-mcp-server`, `detector-mocks`, `evolus-integration`, `claude/practical-volta-yg4v5p`.

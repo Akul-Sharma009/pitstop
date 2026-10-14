@@ -1,7 +1,7 @@
 # vLLM runs separately on AMD Developer Cloud and is reached through VLLM_BASE_URL.
 # Teammate services (mocks, app, detector) join here; see docs/contracts.md.
 #
-#   docker compose up --build                       mock factory + MCP server + agent
+#   docker compose up --build                       mock factory + MCP server + agent + screens (localhost:8003)
 #   docker compose run --build --rm detector --scenario out_of_stock   replay M-01 and send the alert to the agent
 #   docker compose --profile public up -d           + HTTPS on PUBLIC_HOST (for Evolus)
 #   docker compose --profile tunnel up -d           + localhost:8088 for a Cloudflare tunnel (Ollama stand-in)
@@ -30,6 +30,19 @@ services:
       MANUAL_DIR: /app/manual
     ports:
       - "127.0.0.1:8002:8002"
+
+  # Manager approval + operator summary (app/static), with the approve/reject route to the mocks.
+  app:
+    build: .
+    command: uvicorn app.server:app --host 0.0.0.0 --port 8003
+    environment:
+      AGENT_URL: http://agent:8002
+      MOCKS_URL: ${MOCKS_URL_DOCKER:-http://mocks:8000}
+    ports:
+      - "127.0.0.1:8003:8003"
+    depends_on:
+      - agent
+      - mocks
 
   mocks:
     build: .
@@ -70,6 +83,7 @@ services:
       - caddy_data:/data
     depends_on:
       - mcp
+      - app
 
   # Development entry point for a Cloudflare quick tunnel: /v1 (Ollama, needs VLLM_API_KEY) and /mcp.
   tunnel:
