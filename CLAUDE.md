@@ -1,7 +1,7 @@
 # Pitstop — AI maintenance agent for factories
 
 Hackathon entry for **AMD Developer Hackathon ACT III**, tracks **Intelligent Industry** + **Evolus** (partner track).
-Submission deadline: **Sun 18 Oct 2026, 18:00 SGT** (10:00 UTC; the lablab page shows 23:00 "SST", we plan for the earlier time). Thin path must run end to end by **Wed 14 Oct**; feature freeze **Sat 17 Oct** (after that, only bug fixes and the pitch). Record a rough backup demo video as soon as the thin path works.
+Submission deadline: **Sun 18 Oct 2026, 23:00 SGT** (15:00 UTC, lablab event page). Our own target: submitted by **18:00 SGT**, leaving 5 h of buffer. Thin path must run end to end by **Wed 14 Oct**; feature freeze **Sat 17 Oct** (after that, only bug fixes and the pitch). Record a rough backup demo video as soon as the thin path works.
 
 ## The project
 
@@ -95,7 +95,7 @@ Plan to the deadline (agreed 14 Oct; one branch per item, Akul tests each before
 | Fri–Sat | Fleet mode: 3–5 machines in parallel on one MI300X, shared engineers (`fleet-mode`), tested on AMD Sat |
 | Sat 17 AM | Hosting (basic_auth on the screens, `--profile public`, "model offline" notice), then operator chat via the Evolus widget |
 | Sat 17 PM | **Feature freeze.** Fresh-clone test of the README, demo video on AMD, slides |
-| Sun 18 | Submit by noon SGT (deadline 18:00 SGT) |
+| Sun 18 | Final checks; submit by 18:00 SGT (deadline 23:00 SGT) |
 
 ## Work split
 
