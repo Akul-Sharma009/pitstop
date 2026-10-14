@@ -321,4 +321,24 @@ def test_replan_endpoint_plans_again_with_the_feedback(monkeypatch):
     assert latest["feedback"] == "Priya is on leave" and latest["previous"]["booking_id"] == first["booking_id"]
     sent = llms[-1].requests[0]["messages"][1]["content"]
     assert 'feedback: "Priya is on leave"' in sent and "approved by the manager" in sent and "REJECTED" in sent
-    assert "do not order the part again" in replan_message(Replan(feedback="x", purchase_order=order))
+    standing = replan_message(Replan(feedback="x", purchase_order=order))
+    assert "Do NOT call get_supplier_quote or draft_purchase_order" in standing
+    assert "earliest_start 2026-10-15T08:00:00+00:00" in standing and "purchase_order_id PO-0001" in standing
+    rejected = replan_message(Replan(feedback="x", purchase_order={**order, "status": "rejected"}))
+    assert "do not order EM-1004 again" in rejected and "no repair can be booked without it" in rejected
+    assert "Do NOT call" not in rejected
+
+
+def test_guard_flags_two_orders_and_a_booking_without_the_part():
+    from agent import guard
+    from agent.models import AgentResult, ToolCall
+
+    order = lambda po: ToolCall(tool="draft_purchase_order", arguments={}, result={"po_id": po, "part_number": PART, "status": "pending_approval"})
+    booking = ToolCall(tool="draft_booking", arguments={}, result={"booking_id": "BK-0001"})
+    two = AgentResult(status="awaiting_approval", machine_id="M-01", part_number=PART, booking_id="BK-0001",
+                      trace=[order("PO-0001"), order("PO-0002"), booking])
+    assert any("2 orders were drafted for EM-1004: PO-0001, PO-0002" in w for w in guard.check(two, make_alert()))
+    stock = ToolCall(tool="check_inventory", arguments={}, result={"part_number": PART, "quantity_on_hand": 0})
+    none = AgentResult(status="awaiting_approval", machine_id="M-01", part_number=PART, booking_id="BK-0001",
+                       trace=[stock, booking])
+    assert any("neither in stock nor on order" in w for w in guard.check(none, make_alert()))

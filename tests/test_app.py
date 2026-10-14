@@ -26,7 +26,8 @@ def screens(monkeypatch):
 def test_page_and_latest_plan(screens):
     client, _, latest = screens
     assert "Maintenance approval" in client.get("/").text
-    assert client.get("/app.js").status_code == 200
+    page = client.get("/app.js")
+    assert page.status_code == 200 and page.headers["cache-control"] == "no-cache"
     assert client.get("/api/latest").json()["result"] is None  # the agent is still planning
     latest.clear()
     assert client.get("/api/latest").json() == {"alert": None, "result": None}

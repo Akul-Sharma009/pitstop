@@ -119,7 +119,7 @@ Priority if time runs short: stress-test fixes → replan on reject → AMD → 
 - **A README that runs** — its commands must work from a clean clone; re-test before submission.
 - **Environment variables for all keys and endpoints** (vLLM, Evolus, MCP token, etc.). `.env.example` holds placeholders; `.env` is gitignored. **Never commit secrets** — check the diff before every push.
 - Tests with `pytest`; tests must not need the GPU, Evolus or network (use the fakes in `devtools/fakes.py`, which also implement the mock API contract).
-- After changing the prompt, tools or model, run `python -m scripts.eval_agent` against the real vLLM endpoint (12 scenarios from `devtools/scenarios.py`: 3 demo + 9 stress; checks what the agent actually did). New behaviour gets a new scenario there.
+- After changing the prompt, tools or model, run `python -m scripts.eval_agent` against the real vLLM endpoint (14 scenarios from `devtools/scenarios.py`: 3 demo, 9 stress, 2 replan; checks what the agent actually did). New behaviour gets a new scenario there.
 - Evolus setup steps and open questions: `docs/evolus-setup.md`.
 - **Branch names**: short and descriptive so a third person understands them (e.g. `agent-mcp-server`, `thin-path`, `evolus-integration`). No `claude/` prefix and no random auto-generated names.
 - Public GitHub repo, MIT licence, original work.

@@ -126,3 +126,14 @@ def test_search_before_the_ordered_part_arrives_is_refused():
     refused = client.find_free_engineers("cnc_tooling", START.isoformat(), later, 30)
     assert refused["error"].startswith("409") and order["expected_delivery"] in refused["error"]
     assert client.find_free_engineers("cnc_tooling", order["expected_delivery"], later, 30)["slots"]
+
+
+def test_one_open_order_per_part_and_machine():
+    factory, client = demo("out_of_stock")
+    first = client.draft_purchase_order("EM-1004", 1, "M-01", "tool wear")
+    again = client.draft_purchase_order("EM-1004", 1, "M-01", "tool wear")
+    assert again["error"].startswith("409") and first["po_id"] in again["error"]
+    assert "error" not in client.draft_purchase_order("EM-1006", 1, "M-01", "finishing tool")  # another part
+    http = httpx.Client(base_url="http://mocks", transport=httpx.MockTransport(factory.handle))
+    http.post(f"/supplier/purchase-orders/{first['po_id']}/reject")
+    assert "error" not in client.draft_purchase_order("EM-1004", 1, "M-01", "tool wear")  # the old one was rejected

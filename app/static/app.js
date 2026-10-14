@@ -85,8 +85,12 @@ function load(data, demo = false) {
   $('escalation-row').hidden = !data.escalation_reason;
   setText('escalation', data.escalation_reason);
 
-  setText('po-id', data.purchase_order_id || 'No purchase order');
-  setText('booking-id', data.booking_id || 'No booking');
+  setText('po-id', data.purchase_order_id
+    ? [data.purchase_order_id, data.part_number, data.expected_delivery && `arrives ${date(data.expected_delivery)}`].filter(Boolean).join(' · ')
+    : 'No purchase order');
+  setText('booking-id', data.booking_id
+    ? [data.booking_id, data.engineer_name, span(data.booking_start, data.booking_end)].filter((x) => x && x !== '—').join(' · ')
+    : 'No booking');
   for (const [kind, id] of [['po', data.purchase_order_id], ['booking', data.booking_id]]) {
     $(`${kind}-approve`).parentElement.hidden = false;
     $(`${kind}-state`).textContent = id && !demo ? 'pending approval' : '';
@@ -145,6 +149,12 @@ const API = { po: 'purchase-orders', booking: 'bookings' };
 const decided = {}; // po / booking → status in the mock factory
 
 function showDecision(kind, item) {
+  if (kind === 'po' && item.po_id) {
+    // The order as the supplier has it: what the manager is paying for.
+    setText('po-id', [item.po_id, `${item.quantity} × ${item.part_number}`, item.supplier,
+      item.total_price != null && `${item.currency} ${Number(item.total_price).toLocaleString()}`,
+      `arrives ${date(item.expected_delivery)}`].filter(Boolean).join(' · '));
+  }
   $(`${kind}-state`).textContent = item.status.replace('_', ' ');
   $(`${kind}-state`).dataset.status = item.status;
   const open = item.status === 'pending_approval';
@@ -182,6 +192,9 @@ function arm(button, action) {
     const reason = $(button.id.replace('-reject', '-reason'));
     reason.hidden = false;
     reason.focus();
+    const label = () => { button.textContent = reason.value.trim() ? 'Reject and replan' : 'Reject (no new plan)'; };
+    reason.oninput = label;
+    label();
   }
 }
 
@@ -224,7 +237,9 @@ async function decision(kind, action) {
     $(`${kind}-reason`).value = '';
     $('message').textContent = reason
       ? `${label[0].toUpperCase()}${label.slice(1)} ${id} rejected. The agent is making a new plan with your reason…`
-      : `${label[0].toUpperCase()}${label.slice(1)} ${id}: ${body.status}.`;
+      : action === 'reject'
+        ? `${label[0].toUpperCase()}${label.slice(1)} ${id} rejected. No reason given, so the agent won't make a new plan.`
+        : `${label[0].toUpperCase()}${label.slice(1)} ${id}: ${body.status}.`;
   } catch (e) {
     $('message').textContent = `Request failed: ${e.message}`;
     refreshItem(kind, id);

@@ -134,7 +134,7 @@ def speed(transcript: list[dict[str, Any]]) -> tuple[int, float, int]:
 
 def print_run(agent: LocalAgent, result: AgentResult) -> None:
     """The model's text and reasoning for each reply, followed by the tool results it got back."""
-    results = iter(result.trace)
+    results = iter([c for c in result.trace if not c.arguments.get("from_previous_plan")])  # not a call of this run
     for turn, reply in enumerate(agent.transcript, 1):
         if reply["reasoning"]:
             print(f"     [{turn}] thinking: {_short(reply['reasoning'], 600)}")

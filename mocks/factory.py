@@ -162,6 +162,12 @@ class MockFactory:
         supplier = (self.parts.get(body.get("part_number")) or {}).get("supplier")
         if not supplier:  # an invented part number can never be ordered
             return _error(404, "supplier does not sell this part")
+        open_order = next((o for o in self.orders.values() if o["part_number"] == body.get("part_number")
+                           and o.get("machine_id") == body.get("machine_id") and o["status"] != "rejected"), None)
+        if open_order:  # purchasing rule: one open order per part and machine
+            return _error(409, f"{open_order['po_id']} for {open_order['part_number']} is already on order "
+                               f"({open_order['status'].replace('_', ' ')}), expected delivery "
+                               f"{open_order['expected_delivery']}: use it, do not order again")
         quantity = int(body.get("quantity") or 1)
         po_id = f"PO-{len(self.orders) + 1:04d}"
         order = {

@@ -65,6 +65,7 @@ class LocalAgent:
         standing = replan.standing_order() if replan else None
         # expected_delivery of the order the repair waits for: a standing one, or the one drafted in this run
         self.delivery: str | None = standing.get("expected_delivery") if standing else None
+        self.out_of_stock: str | None = None  # a part check_inventory found with 0 on hand
         self.manual_parts = set()
         self.transcript = []
         nudged = False
@@ -142,13 +143,24 @@ class LocalAgent:
             part = str(arguments.get("part_number", ""))
             if part not in self.manual_parts:
                 return {"error": f"Part {part} is not in the machine manual. Search the manual and use the part number it gives."}
-        too_early = self._before_delivery(name, arguments)
-        if too_early:
-            return {"error": too_early}
+        refused = self._no_part(name) or self._before_delivery(name, arguments)
+        if refused:
+            return {"error": refused}
         result = call_tool(self.factory, name, arguments, now=self.now)
-        if name == "draft_purchase_order" and isinstance(result, dict) and "error" not in result:
+        ok = isinstance(result, dict) and "error" not in result
+        if name == "draft_purchase_order" and ok:
             self.delivery = result.get("expected_delivery")
+        if name == "check_inventory" and ok:
+            in_stock = result.get("quantity_on_hand", 0) > 0
+            self.out_of_stock = None if in_stock else result.get("part_number")
         return self._label_times(result)
+
+    def _no_part(self, name: str) -> str | None:
+        """A repair needs its part: no engineer search or booking while it is neither in stock nor on order."""
+        if name not in ("find_free_engineers", "draft_booking") or not self.out_of_stock or self.delivery:
+            return None
+        return (f"{self.out_of_stock} is not in stock and not on order, so no repair can be booked. Order it if that "
+                "is allowed; otherwise escalate to the manager and say why.")
 
     def _before_delivery(self, name: str, arguments: dict[str, Any]) -> str | None:
         """The repair can't start before the ordered part arrives: refuse, so the model searches again."""

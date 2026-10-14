@@ -80,6 +80,7 @@ def evolus_message(alert: Alert, replan: Replan | None = None) -> str:
     """The user message for one alert (and the manager's feedback, when replanning), then the JSON plan."""
     example = json.dumps(PLAN_EXAMPLE, indent=2)
     return (
+        "Reply in English.\n\n"
         f"{alert_message(alert, replan=replan)}\n\n"
         "When you are done, reply in English with only the plan as one JSON object with these keys "
         f"(replace each description with the real value; use null where it says so):\n{example}"

@@ -138,13 +138,26 @@ def replan_message(replan: Replan) -> str:
                      f"{readable(booking.get('start'))}: {status.get(booking.get('status'), booking.get('status'))}.")
     else:
         lines.append("- No booking.")
-    lines += [
-        "Make a new plan that follows the manager's feedback:",
-        "- Rejected drafts are cancelled; never reuse them or book the same thing again unless the feedback allows it.",
-        "- A purchase order that was not rejected still stands: do not order the part again. Use its expected "
-        "delivery as the earliest start and give its purchase_order_id when you book.",
-        "- If the feedback rules out every option, do not book: escalate and say why.",
-    ]
+    lines += ["", "Make a new plan that follows the manager's feedback. What that means here:"]
+    order = replan.purchase_order
+    if order and replan.standing_order():
+        lines += [
+            f"- {order.get('po_id')} for {order.get('part_number')} is still on order. Do NOT call get_supplier_quote "
+            "or draft_purchase_order: the part is already coming.",
+            f"- Search the manual for the repair steps, then call find_free_engineers with earliest_start "
+            f"{order.get('expected_delivery')} (when {order.get('po_id')} arrives), and book with purchase_order_id "
+            f"{order.get('po_id')}.",
+        ]
+    elif order:
+        lines += [
+            f"- {order.get('po_id')} was rejected: do not order {order.get('part_number')} again unless the feedback "
+            "allows it. Check the stock: if the part is not in stock, no repair can be booked without it, so do not "
+            "book: escalate and say why.",
+        ]
+    if replan.booking and replan.booking.get("status") == "rejected":
+        lines.append(f"- Booking {replan.booking.get('booking_id')} was rejected: book a different engineer or time "
+                     "that the feedback allows.")
+    lines.append("- If the feedback rules out every option, do not book: escalate and say why.")
     return "\n".join(lines)
 
 

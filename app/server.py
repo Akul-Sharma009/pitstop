@@ -94,4 +94,13 @@ def replan(reason: str) -> None:
     client("agent").post("/incidents/replan", json=body, timeout=600)
 
 
+@app.middleware("http")
+async def revalidate(request, call_next):
+    """Browsers check for a newer page on every load (ETag), so a rebuild shows up without a hard reload."""
+    response = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 app.mount("/", StaticFiles(directory=STATIC, html=True), name="static")

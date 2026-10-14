@@ -99,7 +99,7 @@ The agent (and the MCP server) only use the endpoints marked **agent**. Approve/
 | POST | `/supplier/purchase-orders/{po_id}/approve` | **app only** | order with `status: "approved"` |
 | POST | `/supplier/purchase-orders/{po_id}/reject` | **app only** | order with `status: "rejected"` |
 
-`expected_delivery` = creation time + `lead_time_hours`, rounded up to the whole hour; `total_price` = `unit_price` × `quantity`. `POST /supplier/purchase-orders` returns 404 for a part the supplier does not sell (same as the quote), so an invented part number can never be ordered.
+One open order per part and machine: `POST /supplier/purchase-orders` returns 409 (naming the open order) while a non-rejected order for the same part and machine exists. `expected_delivery` = creation time + `lead_time_hours`, rounded up to the whole hour; `total_price` = `unit_price` × `quantity`. `POST /supplier/purchase-orders` returns 404 for a part the supplier does not sell (same as the quote), so an invented part number can never be ordered.
 
 ### Engineer calendar
 
