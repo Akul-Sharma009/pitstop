@@ -39,7 +39,9 @@ const value = (x) => (x === null || x === undefined || x === '' ? '—' : String
 const date = (x) => (x
   ? new Date(x).toLocaleString('en-GB', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) + ' UTC'
   : '—');
-const span = (start, end) => (start ? `${date(start)} – ${date(end).replace(/^.*, /, '')}` : '—');
+// A time window: the end shows only its time (browsers word dates differently, e.g. Safari's "Thu 15 Oct at 20:00").
+const clock = (x) => new Date(x).toLocaleTimeString('en-GB', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit' }) + ' UTC';
+const span = (start, end) => (start ? `${date(start)} – ${end ? clock(end) : '—'}` : '—');
 function setText(id, v) { $(id).textContent = value(v); }
 
 function setStatus(status) {
