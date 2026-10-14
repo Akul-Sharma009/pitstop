@@ -66,7 +66,7 @@ Status as of **Wed 14 Oct** (update this section at the end of each day).
 
 | Part | Owner | Status |
 |---|---|---|
-| Repo, Docker, README, licence, contracts | Akul | Done, on `master` (PRs #1–#7) |
+| Repo, Docker, README, licence, contracts | Akul | Done, on `master` (PRs #1–#8) |
 | Agent service + guardrails | Akul | Done: 6/6 on `scripts.eval_agent` (Ollama stand-in, ~2 s per model call) |
 | MCP server | Akul | Done; connected to Evolus as a manual Connector (5 tools) through a Cloudflare tunnel |
 | Model choice | Akul | Qwen3-30B-A3B-Instruct-2507 (see Architecture) |
@@ -75,8 +75,8 @@ Status as of **Wed 14 Oct** (update this section at the end of each day).
 | Failure model + replay | Teammate, Akul | Done, on `master` (PR #2): teammate's model rebuilt as `detector/`; one machine, Alert contract, remaining cutting time from the model. Real AI4I: 7/9 caught, 113 false alarms; alert at wear 160 with 40 cutting min left |
 | Mock factory systems | Teammate, Akul | Done, on `master` (PR #2): `mocks/` service, seed `mocks/seed.json` (teammate's fictional suppliers); logs agent calls; enforces the repair window |
 | Manual, screens | Teammate, Akul | Done (PR #5): teammate's manual (7 failure types, cleaned of implementation notes) and screens, served by the `app` service at :8003. Verified live 14 Oct with Evolus: eval 6/6 on the new manual (~2.9 s per call), screens follow the run, manager approved both drafts |
-| Stress tests, replan on reject | Akul | Done (PRs #6, #7): 14 eval scenarios (3 demo, 9 stress, 2 replan), 28/28 on the Ollama stand-in; replan verified live in Evolus (manager rejects with a reason → new plan, standing order reused, enforced by the mocks' one-open-order rule) |
-| Supplier choice | Akul | 14 Oct: built on branch `supplier-choice` (not merged). Two suppliers per part (cheap/slow, fast/dear); the agent orders the cheapest that arrives in time. Verified live in Evolus: `urgent` → fast supplier SGD 145, `out_of_stock` → cheap SGD 89. Eval 29/30: `fast_supplier` is flaky (1/2, then 2/3): the model sometimes takes the cheap offer that arrives after the failure. Fix agreed, see "Next up" |
+| Stress tests, replan on reject | Akul | Done (PRs #6, #7): 14 eval scenarios (3 demo, 9 stress, 2 replan; 15 with `fast_supplier`), 28/28 on the Ollama stand-in; replan verified live in Evolus (manager rejects with a reason → new plan, standing order reused, enforced by the mocks' one-open-order rule) |
+| Supplier choice | Akul | Done (PR #8): two suppliers per part (cheap/slow, fast/dear); the agent orders the cheapest offer that arrives in time. Verified live in Evolus: `urgent` → fast supplier SGD 145, `out_of_stock` → cheap SGD 89. A late offer is refused by the local agent, the mock calendar rejects an empty search window (422), and the guard warns (covers Evolus). Eval on the stand-in: `fast_supplier` 5/5, core 6/6; 112 tests. Evolus instructions re-pasted for this prompt |
 
 Not yet proven: anything on AMD, and `docker compose up` on a clean machine.
 
@@ -92,16 +92,14 @@ Plan to the deadline (agreed 14 Oct, re-dated the same evening: Wed 14 already c
 
 | When | What |
 |---|---|
-| Wed 14 (done) | Thin path through Evolus; manual and screens; downtime saved; stress-test set (PR #6); replan on reject (PR #7); supplier choice built (`supplier-choice`, Akul verifies) |
-| Thu 15 | Merge supplier choice; fleet mode: 3–5 machines in parallel, shared engineers (`fleet-mode`), tested on the stand-in; hosting prepared (basic_auth on the screens, "model offline" notice); check AMD credits |
+| Wed 14 (done) | Thin path through Evolus; manual and screens; downtime saved; stress-test set (PR #6); replan on reject (PR #7); supplier choice (PR #8) |
+| Thu 15 | Fleet mode: 3–5 machines in parallel, shared engineers (`fleet-mode`), tested on the stand-in; hosting prepared (basic_auth on the screens, "model offline" notice); check AMD credits |
 | Fri 16 | **AMD**: credits or pay by evening; `serve.sh`, eval on AMD, Evolus model switched; fleet mode on the MI300X; hosting live; operator chat via the Evolus widget |
 | Sat 17, 12:00 | **Feature freeze** |
 | Sat 17 PM | Fresh-clone README test; demo video on AMD (if AMD failed: on the stand-in, said plainly); slides, cover image, descriptions and tags (Claude drafts, Akul reviews) |
 | Sun 18 AM | Final checks and upload; **submit by 12:00 SGT**. No building or recording on Sunday |
 
-Next up, on branch `supplier-choice`: the `fast_supplier` fix is built (14 Oct, 112 tests pass). The local agent refuses an order that arrives after the predicted failure while another offer is in time, and names the in-time supplier. The mock calendar returns 422 for an empty search window. The guard warns about a late order (this covers Evolus). Prompt step 3 says that a late offer is useless. Akul: run `--scenario fast_supplier --repeat 5` (expect 5/5), then `--core`. Then merge `supplier-choice` (PR #8), re-paste the Evolus instructions (`python scripts/evolus_text.py prompt`) and update this status.
-
-Then: fleet mode (Thu, branch `fleet-mode`), hosting prep (basic_auth on the screens, "model offline" notice), AMD on Fri (pay by evening if no credits), operator chat via the Evolus widget (Fri), submission materials Sat PM (Claude drafts title, descriptions, tags, cover image, slides, video script).
+Next up: fleet mode (Thu, branch `fleet-mode`): 3–5 machines in parallel sharing the engineers, tested on the stand-in; agree the design with Akul before building. Then hosting prep (basic_auth on the screens, "model offline" notice), AMD on Fri (pay by evening if no credits), operator chat via the Evolus widget (Fri), submission materials Sat PM (Claude drafts title, descriptions, tags, cover image, slides, video script).
 
 Operational notes (learned 13–14 Oct):
 - The Cloudflare quick tunnel dies after a while ("Tunnel not found", HTTP 530). After restarting `cloudflared tunnel --url http://localhost:8088`, update the new URL in Evolus: Your models (`…/v1`) and the Connector (`…/mcp`).
