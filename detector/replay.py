@@ -131,7 +131,7 @@ def main(argv: list[str] | None = None) -> int:
     url = env("ALERT_URL", "http://localhost:8002/incidents")
     print(f"\nSending to {url} (the agent plans the repair; this can take a minute)...")
     result = httpx.post(url, json=alert, timeout=600).raise_for_status().json()
-    print(json.dumps({k: result.get(k) for k in ("status", "part_number", "purchase_order_id", "expected_delivery",
+    print(json.dumps({k: result.get(k) for k in ("status", "part_number", "repair_steps", "purchase_order_id", "expected_delivery",
                                                   "booking_id", "engineer_name", "booking_start", "escalation_reason",
                                                   "operator_summary", "warnings")}, indent=2))
     return 0
