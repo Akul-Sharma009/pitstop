@@ -50,6 +50,12 @@ def extract_json(text: str) -> dict[str, Any]:
     return found
 
 
+def evolus_message(alert: Alert) -> str:
+    """The user message for one alert: the alert, then the JSON plan we want back."""
+    schema = json.dumps(SUBMIT_PLAN_SPEC["parameters"])
+    return f"{alert_message(alert)}\n\nWhen you are done, reply with only a JSON object matching this schema:\n{schema}"
+
+
 class EvolusAgent:
     def __init__(self, llm: Any = None, agent_id: str | None = None, factory_log: FactoryLog | None = None):
         self.llm = llm or evolus_client()
@@ -58,14 +64,9 @@ class EvolusAgent:
 
     def run(self, alert: Alert) -> tuple[dict[str, Any], list]:
         start = self.factory_log.last()
-        schema = json.dumps(SUBMIT_PLAN_SPEC["parameters"])
-        prompt = (
-            f"{alert_message(alert)}\n\n"
-            f"When you are done, reply with only a JSON object matching this schema:\n{schema}"
-        )
         response = self.llm.chat.completions.create(
             model=self.agent_id,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": evolus_message(alert)}],
         )
         plan = extract_json(strip_thinking(response.choices[0].message.content or ""))
         return plan, self.factory_log.calls_after(start)

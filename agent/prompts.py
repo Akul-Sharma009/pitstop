@@ -67,6 +67,20 @@ Rules:
   wrong, what has been done, and what happens next (including that the manager must approve).
 """
 
+# Evolus: the manual is the agent's knowledge library and there is no submit_plan tool; the final reply is the
+# JSON plan (agent/evolus_client.py asks for it with the schema). Paste this into the Evolus agent's instructions.
+EVOLUS_SYSTEM_PROMPT = SYSTEM_PROMPT.replace(
+    "1. Diagnose: search the machine manual for the failure type.",
+    "1. Diagnose: search the machine manual (your knowledge library) for the failure type.",
+).replace(
+    """5. Finish: call submit_plan exactly once. Order and booking IDs, times and the engineer are taken from
+   your tool results automatically; what matters in the plan is the status, diagnosis, repair steps,
+   part, escalation_reason (when escalating) and operator_summary.""",
+    """5. Finish: reply with only the JSON plan described in the message, nothing else. Copy order and booking
+   IDs, times and the engineer exactly from your tool results.""",
+)
+
+
 SUBMIT_PLAN_SPEC = {
     "name": "submit_plan",
     "description": "Submit the final repair plan. Call exactly once, after the other steps.",

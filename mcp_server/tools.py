@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
+from agent.times import label_times
 from mcp_server.factory import FactoryClient
 
 TOOL_SPECS: list[dict[str, Any]] = [
@@ -83,10 +85,12 @@ TOOL_SPECS: list[dict[str, Any]] = [
 TOOL_NAMES = {spec["name"] for spec in TOOL_SPECS}
 
 
-def call_tool(client: FactoryClient, name: str, arguments: dict[str, Any]) -> Any:
+def call_tool(client: FactoryClient, name: str, arguments: dict[str, Any], now: datetime | None = None) -> Any:
+    """Run one tool. Times in the result get 'today'/'tomorrow' wording relative to `now` (default: the clock)."""
     if name not in TOOL_NAMES:
         return {"error": f"unknown tool {name}"}
     try:
-        return getattr(client, name)(**arguments)
+        result = getattr(client, name)(**arguments)
     except TypeError as exc:
         return {"error": f"bad arguments for {name}: {exc}"}
+    return label_times(result, now or datetime.now(timezone.utc))

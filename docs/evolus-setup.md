@@ -17,7 +17,7 @@ Source: the Evolus developer page (evolus.ai/en/developers) and the API referenc
 - **Libraries:** `POST /api/v1/memories/{libraryId}/documents?language=en` (multipart `file`). Indexing runs in the background and uses platform credits. Set `language=en`: the default is Italian.
 - **Your model:** any OpenAI-compatible endpoint with function calling (base URL, model name, API key), with a connection test. Calls to our own model use no Evolus credits.
 - **Limits:** 60 requests/min and 50,000 platform credits per workspace (credits pay for document reading, AI Tools and indexing). Out of credits → `402`.
-- **Open question:** whether an Evolus agent can call an external MCP server (our factory tools). The developer page doesn't say; check the agent editor and the in-workspace API reference.
+- **External tools:** *Your company → Connectors → Add manually* takes our MCP server (type HTTP, a URL, fixed header credentials). Confirmed 14 Oct: Evolus lists all 5 tools.
 
 ## 1. Put the model and the MCP server online (stand-in: Ollama on the Mac)
 
@@ -52,17 +52,19 @@ With vLLM on AMD, use the HTTPS host from `setup-guide.md` steps 3–5 instead (
 ## 3. Building blocks
 
 - [ ] **Knowledge library**: upload `manual/*.md` (or a PDF of it) with language English.
-- [ ] **Factory tools**: our MCP server at `$T/mcp`, header `Authorization: Bearer $MCP_API_TOKEN`. It should list 5 tools: `check_inventory`, `get_supplier_quote`, `draft_purchase_order`, `find_free_engineers`, `draft_booking`. There is no approve tool, on purpose. *Where this is set in Evolus is the open question above.*
+- [x] **Factory tools**: *Your company → Connectors → Add manually*: type HTTP, URL `$T/mcp`, header `Authorization: Bearer $MCP_API_TOKEN`, credentials Fixed. Evolus lists 5 tools: `check_inventory`, `get_supplier_quote`, `draft_purchase_order`, `find_free_engineers`, `draft_booking` (it files the two `draft_` tools under "Mail"; harmless). There is no approve tool, on purpose. Evolus strips spaces from connector names. When the tunnel address changes, edit the URL here and in Your models.
 - [ ] **Agent**: our model; instructions = the system prompt; attach the library and the tools.
-  Print the prompt with `python -c "from agent.prompts import SYSTEM_PROMPT; print(SYSTEM_PROMPT)"`.
-  In Evolus, "search the machine manual" is the knowledge library.
+  Print the instructions with `python scripts/evolus_text.py prompt` (the Evolus version of the system prompt: the manual is the knowledge library, and the final reply is the JSON plan instead of a `submit_plan` call).
 - [ ] **Workflow**: diagnose → check stock → order (only if out of stock) → book engineer (or escalate) → summary.
 
-Test in the Evolus chat with the sample alert:
+Test in the Evolus chat with an alert dated now, exactly as our backend sends it. Reset the mock factory first, so the engineer slots line up with now:
 
 ```bash
-python -c "from devtools.fakes import sample_alert; from agent.prompts import alert_message; print(alert_message(sample_alert()))"
+curl -X POST 'localhost:8000/admin/reset?scenario=out_of_stock'
+python scripts/evolus_text.py alert
 ```
+
+Then check what the agent did: `curl -s localhost:8000/admin/calls | python -m json.tool`.
 
 ## 4. Drive it from our agent service
 

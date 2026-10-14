@@ -13,7 +13,7 @@ from typing import Any
 
 from agent import manual
 from agent.models import Alert, ToolCall
-from agent.times import readable, utc, when
+from agent.times import label_times, readable, utc
 from agent.prompts import SEARCH_MANUAL_SPEC, SUBMIT_PLAN_SPEC, SYSTEM_PROMPT, alert_message, reasoning_of, strip_thinking
 from mcp_server.factory import FactoryClient
 from mcp_server.tools import TOOL_SPECS, call_tool
@@ -142,7 +142,7 @@ class LocalAgent:
         too_early = self._before_delivery(name, arguments)
         if too_early:
             return {"error": too_early}
-        result = call_tool(self.factory, name, arguments)
+        result = call_tool(self.factory, name, arguments, now=self.now)
         if name == "draft_purchase_order" and isinstance(result, dict) and "error" not in result:
             self.delivery = result.get("expected_delivery")
         return self._label_times(result)
@@ -159,13 +159,4 @@ class LocalAgent:
         return f"The ordered part arrives {readable(delivery)}. {verb} {delivery.isoformat()}."
 
     def _label_times(self, result: Any) -> Any:
-        """Add 'when' wording next to times, so the model quotes 'today'/'tomorrow' instead of working it out."""
-        if not isinstance(result, dict) or "error" in result:
-            return result
-        result = dict(result)
-        for key in ("expected_delivery", "start"):
-            if key in result and when(result[key], self.now):
-                result[f"{key}_when"] = when(result[key], self.now)
-        if isinstance(result.get("slots"), list):
-            result["slots"] = [{**slot, "slot_start_when": when(slot.get("slot_start"), self.now)} for slot in result["slots"]]
-        return result
+        return label_times(result, self.now)  # relative to the alert, so pinned test dates read right

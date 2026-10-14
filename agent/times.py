@@ -38,6 +38,20 @@ def when(value: Any, now: Any) -> str | None:
     return readable(moment)
 
 
+def label_times(result: Any, now: Any) -> Any:
+    """Add 'when' wording next to the times in a tool result, so a model quotes 'today'/'tomorrow'
+    instead of working dates out (it gets them wrong)."""
+    if not isinstance(result, dict) or "error" in result:
+        return result
+    result = dict(result)
+    for key in ("expected_delivery", "start"):
+        if key in result and when(result[key], now):
+            result[f"{key}_when"] = when(result[key], now)
+    if isinstance(result.get("slots"), list):
+        result["slots"] = [{**slot, "slot_start_when": when(slot.get("slot_start"), now)} for slot in result["slots"]]
+    return result
+
+
 def hours_between(start: Any, end: Any) -> float | None:
     a, b = utc(start), utc(end)
     return None if a is None or b is None else (b - a).total_seconds() / 3600

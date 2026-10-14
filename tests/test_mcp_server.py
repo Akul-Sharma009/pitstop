@@ -34,3 +34,27 @@ def test_bearer_token(monkeypatch, header, authorized):
     with TestClient(server.build_app()) as client:
         response = client.post("/mcp", headers=headers, json={})
     assert (response.status_code != 401) == authorized
+
+
+def test_tool_results_carry_when_wording(monkeypatch):
+    """Evolus gets the same 'today'/'tomorrow' wording as the local agent, relative to the server clock."""
+    from datetime import datetime, timezone
+
+    from mcp_server.tools import call_tool
+
+    monkeypatch.setattr(server, "factory", FakeFactory().client())
+    order = anyio.run(server.mcp.call_tool, "draft_purchase_order",
+                      {"part_number": PART, "quantity": 1, "machine_id": "M-01", "reason": "wear"}).structured_content
+    assert "expected_delivery_when" in order
+    now = datetime(2026, 10, 14, 8, 0, tzinfo=timezone.utc)
+    slots = call_tool(FakeFactory().client(), "find_free_engineers", {
+        "skill": "cnc_tooling", "earliest_start": "2026-10-15T08:00:00Z", "latest_end": "2026-10-16T08:00:00Z",
+        "duration_minutes": 30}, now=now)["slots"]
+    assert slots[0]["slot_start_when"] == "tomorrow (Thu 15 Oct) 14:00 UTC"
+
+
+def test_evolus_prompt_has_no_local_only_tools():
+    from agent.prompts import EVOLUS_SYSTEM_PROMPT
+
+    assert "submit_plan" not in EVOLUS_SYSTEM_PROMPT and "knowledge library" in EVOLUS_SYSTEM_PROMPT
+    assert "reply with only the JSON plan" in EVOLUS_SYSTEM_PROMPT

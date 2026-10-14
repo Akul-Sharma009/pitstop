@@ -2,6 +2,7 @@
 
 Run: python -m mcp_server.server  → streamable HTTP at http://0.0.0.0:8001/mcp
 Set MCP_API_TOKEN to require "Authorization: Bearer <token>" (do this when it is public).
+Results carry "*_when" wording for times (today/tomorrow, relative to the server clock), as in the local agent.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from mcp_server.factory import FactoryClient
-from mcp_server.tools import TOOL_SPECS
+from mcp_server.tools import TOOL_SPECS, call_tool
 
 DESCRIPTIONS = {spec["name"]: spec["description"] for spec in TOOL_SPECS}
 
@@ -32,22 +33,25 @@ factory = FactoryClient()
 
 @mcp.tool(description=DESCRIPTIONS["check_inventory"])
 def check_inventory(part_number: str) -> dict[str, Any]:
-    return factory.check_inventory(part_number)
+    return call_tool(factory, "check_inventory", {"part_number": part_number})
 
 
 @mcp.tool(description=DESCRIPTIONS["get_supplier_quote"])
 def get_supplier_quote(part_number: str) -> dict[str, Any]:
-    return factory.get_supplier_quote(part_number)
+    return call_tool(factory, "get_supplier_quote", {"part_number": part_number})
 
 
 @mcp.tool(description=DESCRIPTIONS["draft_purchase_order"])
 def draft_purchase_order(part_number: str, quantity: int, machine_id: str, reason: str) -> dict[str, Any]:
-    return factory.draft_purchase_order(part_number, quantity, machine_id, reason)
+    arguments = {"part_number": part_number, "quantity": quantity, "machine_id": machine_id, "reason": reason}
+    return call_tool(factory, "draft_purchase_order", arguments)
 
 
 @mcp.tool(description=DESCRIPTIONS["find_free_engineers"])
 def find_free_engineers(skill: str, earliest_start: str, latest_end: str, duration_minutes: int) -> dict[str, Any]:
-    return factory.find_free_engineers(skill, earliest_start, latest_end, duration_minutes)
+    arguments = {"skill": skill, "earliest_start": earliest_start, "latest_end": latest_end,
+                 "duration_minutes": duration_minutes}
+    return call_tool(factory, "find_free_engineers", arguments)
 
 
 @mcp.tool(description=DESCRIPTIONS["draft_booking"])
@@ -59,7 +63,9 @@ def draft_booking(
     task: str,
     purchase_order_id: str | None = None,
 ) -> dict[str, Any]:
-    return factory.draft_booking(engineer_id, machine_id, start, end, task, purchase_order_id)
+    arguments = {"engineer_id": engineer_id, "machine_id": machine_id, "start": start, "end": end, "task": task,
+                 "purchase_order_id": purchase_order_id}
+    return call_tool(factory, "draft_booking", arguments)
 
 
 class BearerAuth:
