@@ -1,7 +1,7 @@
 # Pitstop — AI maintenance agent for factories
 
 Hackathon entry for **AMD Developer Hackathon ACT III**, tracks **Intelligent Industry** + **Evolus** (partner track).
-Submission deadline: **Sun 18 Oct 2026, 23:00 SGT** (15:00 UTC, lablab event page). Our own target: submitted by **18:00 SGT**, leaving 5 h of buffer. Thin path must run end to end by **Wed 14 Oct**; feature freeze **Sat 17 Oct** (after that, only bug fixes and the pitch). Record a rough backup demo video as soon as the thin path works.
+Submission deadline: **Sun 18 Oct 2026, 18:00 SGT** (the event itself ends 23:00 SGT). Our target: **submitted by 12:00 SGT Sunday**; Akul's exams start 19 Oct, so there is no time for anything after that. Thin path must run end to end by **Wed 14 Oct**; feature freeze **Sat 17 Oct, 12:00 SGT** (after that, only bug fixes and the pitch). Record a rough backup demo video as soon as the thin path works.
 
 ## The project
 
@@ -90,12 +90,14 @@ Plan to the deadline (agreed 14 Oct; one branch per item, Akul tests each before
 
 | When | What |
 |---|---|
-| Thu 15 | Stress-test set (12 eval scenarios) + engineer named in the summary (`stress-tests`); replan on reject: the manager rejects with a reason, the agent replans (`replan-on-reject`); rough backup video |
-| Fri 16 | Supplier choice: cheap/slow vs fast/dear, cheapest that arrives in time (`supplier-choice`); **AMD**: credits or pay by evening, `serve.sh`, eval on AMD, Evolus model switched |
-| Fri–Sat | Fleet mode: 3–5 machines in parallel on one MI300X, shared engineers (`fleet-mode`), tested on AMD Sat |
-| Sat 17 AM | Hosting (basic_auth on the screens, `--profile public`, "model offline" notice), then operator chat via the Evolus widget |
-| Sat 17 PM | **Feature freeze.** Fresh-clone test of the README, demo video on AMD, slides |
-| Sun 18 | Final checks; submit by 18:00 SGT (deadline 23:00 SGT) |
+| Thu 15 | Stress-test eval + fixes (`stress-tests`); replan on reject: the manager rejects with a reason, the agent replans (`replan-on-reject`); rough backup video |
+| Fri 16 | Supplier choice: cheap/slow vs fast/dear, cheapest that arrives in time (`supplier-choice`); **AMD**: credits or pay by evening, `serve.sh`, eval on AMD, Evolus model switched; hosting set up (AMD instance or a small VM) |
+| Fri–Sat AM | Fleet mode: 3–5 machines in parallel on one MI300X (`fleet-mode`), tested on AMD Sat morning, **cut first if anything slips**; operator chat via the Evolus widget once hosted |
+| Sat 17, 12:00 | **Feature freeze** |
+| Sat 17 PM | Fresh-clone README test; demo video on AMD; slides, cover image, descriptions and tags (Claude drafts, Akul reviews) |
+| Sun 18 AM | Final checks and upload; **submit by 12:00 SGT**. No building or recording on Sunday: if the AMD video isn't done by Sat evening, submit the backup video plus AMD screenshots with an honest note |
+
+Priority if time runs short: stress-test fixes → replan on reject → AMD → supplier choice → hosting → operator chat → fleet mode.
 
 ## Work split
 
