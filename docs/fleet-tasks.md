@@ -3,7 +3,7 @@
 Fleet mode runs four machines that share one factory: the same engineers and the same parts store. Claude builds the backend (mocks, agent service, `/api/incidents`) on branch `fleet-mode`. These two tasks are the detector and screen parts, built against the interfaces in [`contracts.md`](contracts.md). Work on your own branch from an up-to-date `master`; Akul reviews and merges. Claude doesn't edit `detector/` or `app/static/` while these branches are open.
 
 ```bash
-cd ~/Desktop/College/Projects/pitstop
+cd ~/pitstop
 git checkout master && git pull origin master
 git checkout -b fleet-replay        # Task 2: git checkout master && git checkout -b fleet-screens
 ```

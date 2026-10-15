@@ -7,12 +7,16 @@ come from the agent. Each request without X-Conversation-Id starts a new convers
 The Evolus agent runs on our model, has the manual in a knowledge library and reaches the factory tools
 through our MCP server. Its instructions are agent.prompts.SYSTEM_PROMPT. The reply is text only, so the
 trace comes from the mock factory's call log (agent/factory_log.py) and is checked like a local run.
+
+Fleet mode: the MCP tool calls don't say which machine they are for, so runs are queued one at a time and
+the factory is told the machine first (its focus). That keeps each run's trace and stock to its own machine.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import threading
 from typing import Any
 
 from agent.factory_log import FactoryLog
@@ -21,6 +25,7 @@ from agent.prompts import alert_message, strip_thinking
 
 
 EVOLUS_BASE_URL = "https://api.evolus.ai/v1"
+RUN_LOCK = threading.Lock()  # one Evolus run at a time (see the module docstring)
 
 
 class EvolusError(RuntimeError):
@@ -94,10 +99,13 @@ class EvolusAgent:
         self.factory_log = factory_log or FactoryLog()
 
     def run(self, alert: Alert, replan: Replan | None = None) -> tuple[dict[str, Any], list]:
-        start = self.factory_log.last()
-        response = self.llm.chat.completions.create(
-            model=self.agent_id,
-            messages=[{"role": "user", "content": evolus_message(alert, replan)}],
-        )
+        with RUN_LOCK:
+            self.factory_log.focus(alert.machine_id)
+            start = self.factory_log.last()
+            response = self.llm.chat.completions.create(
+                model=self.agent_id,
+                messages=[{"role": "user", "content": evolus_message(alert, replan)}],
+            )
+            calls = self.factory_log.calls_after(start)
         plan = extract_json(strip_thinking(response.choices[0].message.content or ""))
-        return plan, self.factory_log.calls_after(start)
+        return plan, calls

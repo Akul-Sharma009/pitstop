@@ -20,9 +20,14 @@ class FactoryClient:
             timeout=10.0,
             transport=transport,
         )
+        # The machine this client plans for (fleet mode): sent as X-Machine-Id, so the factory knows whose
+        # orders and stock a call is about. The MCP server leaves it unset (the Evolus backend sets a focus).
+        self.machine_id: str | None = None
 
     def _call(self, method: str, path: str, **kwargs: Any) -> Any:
         """Return the JSON body, or {"error": ...} for client errors so the agent can react."""
+        if self.machine_id:
+            kwargs["headers"] = {"X-Machine-Id": self.machine_id}
         response = self._http.request(method, path, **kwargs)
         if 400 <= response.status_code < 500:
             try:
@@ -67,6 +72,7 @@ class FactoryClient:
         end: str,
         task: str,
         purchase_order_id: str | None = None,
+        part_number: str | None = None,
     ) -> dict[str, Any]:
         body = {
             "engineer_id": engineer_id,
@@ -76,4 +82,6 @@ class FactoryClient:
             "task": task,
             "purchase_order_id": purchase_order_id,
         }
+        if part_number:
+            body["part_number"] = part_number
         return self._call("POST", "/calendar/bookings", json=body)

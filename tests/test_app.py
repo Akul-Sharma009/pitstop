@@ -79,8 +79,24 @@ def test_reject_with_a_reason_asks_the_agent_to_replan(monkeypatch):
     monkeypatch.setattr(server.threading, "Thread", Now)
     client = TestClient(server.app)
     assert client.post(f"/api/bookings/{booking['booking_id']}/reject", json={"reason": "Priya is on leave"}).status_code == 200
-    assert sent == [{"feedback": "Priya is on leave", "purchase_order": factory.orders[order["po_id"]],
+    assert sent == [{"feedback": "Priya is on leave", "machine_id": "M-01", "purchase_order": factory.orders[order["po_id"]],
                      "booking": factory.bookings[booking["booking_id"]]}]
     assert sent[0]["booking"]["status"] == "rejected"
     client.post(f"/api/purchase-orders/{order['po_id']}/reject")  # no reason: no replan
     assert len(sent) == 1
+
+
+def test_fleet_incidents_are_relayed(monkeypatch):
+    fleet = {"M-01": {"alert": {"machine_id": "M-01"}, "result": None}, "M-02": {"alert": {"machine_id": "M-02"}, "result": None}}
+
+    def agent(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/incidents":
+            return httpx.Response(200, json={"incidents": [fleet[m] for m in sorted(fleet)]})
+        machine = request.url.path.rsplit("/", 1)[-1]
+        return httpx.Response(200, json=fleet[machine]) if machine in fleet else httpx.Response(404, json={"detail": "no alert"})
+
+    monkeypatch.setattr(server, "clients", {"agent": httpx.Client(base_url="http://agent", transport=httpx.MockTransport(agent))})
+    client = TestClient(server.app)
+    assert [i["alert"]["machine_id"] for i in client.get("/api/incidents").json()["incidents"]] == ["M-01", "M-02"]
+    assert client.get("/api/incidents/M-02").json()["alert"]["machine_id"] == "M-02"
+    assert client.get("/api/incidents/M-09").status_code == 404

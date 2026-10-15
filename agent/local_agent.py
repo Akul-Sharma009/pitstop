@@ -62,10 +62,12 @@ class LocalAgent:
         ]
         trace: list[ToolCall] = []
         self.now = alert.detected_at
+        self.factory.machine_id = alert.machine_id  # fleet mode: whose orders and stock these calls are about
         standing = replan.standing_order() if replan else None
         # expected_delivery of the order the repair waits for: a standing one, or the one drafted in this run
         self.delivery: str | None = standing.get("expected_delivery") if standing else None
         self.out_of_stock: str | None = None  # a part check_inventory found with 0 on hand
+        self.in_stock: str | None = None  # a part check_inventory found on hand (a booking reserves one)
         self.failure_at = utc(alert.predicted_failure_at)
         self.offers: dict[str, list[dict[str, Any]]] = {}  # part → offers from its last get_supplier_quote
         self.manual_parts = set()
@@ -145,6 +147,9 @@ class LocalAgent:
             part = str(arguments.get("part_number", ""))
             if part not in self.manual_parts:
                 return {"error": f"Part {part} is not in the machine manual. Search the manual and use the part number it gives."}
+        if name == "draft_booking" and not arguments.get("purchase_order_id") and not arguments.get("part_number") \
+                and self.in_stock and not self.delivery:
+            arguments["part_number"] = self.in_stock  # from stock: the booking reserves it (shared with other machines)
         refused = self._no_part(name) or self._before_delivery(name, arguments) or self._too_late(name, arguments)
         if refused:
             return {"error": refused}
@@ -157,6 +162,7 @@ class LocalAgent:
         if name == "check_inventory" and ok:
             in_stock = result.get("quantity_on_hand", 0) > 0
             self.out_of_stock = None if in_stock else result.get("part_number")
+            self.in_stock = result.get("part_number") if in_stock else None
         return self._label_times(result)
 
     def _no_part(self, name: str) -> str | None:

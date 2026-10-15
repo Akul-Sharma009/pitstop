@@ -189,7 +189,7 @@ Gemma (decided 14 Oct evening): Google DeepMind joined as a partner. There is an
   - Otherwise Qwen keeps planning and Gemma powers the operator side (operator chat via the Evolus widget, operator summary in the operator's language), served next to Qwen. Both fit in the MI300X's 192 GB.
 
 Operational notes (learned 13–15 Oct):
-- **Since 15 Oct: Claude Code runs locally on Akul's Mac**, in `~/Desktop/College/Projects/pitstop` (the old `~/pitstop` worktree is gone). `.env` and the AI4I data (`data/`) live only there. The local session opens PRs and merges them after Akul's eval passes, merging with the full head SHA.
+- **Since 15 Oct: Claude Code runs locally on Akul's Mac**, in `~/pitstop` (a standalone clone; the old `~/Desktop/College/Projects/pitstop` copy was retired on 14 Oct). `.env` and the AI4I data (`data/`) live only there. The local session opens PRs and merges them after Akul's eval passes, merging with the full head SHA.
 - The Cloudflare quick tunnel dies after a while ("Tunnel not found", HTTP 530). After restarting `cloudflared tunnel --url http://localhost:8088`, update the new URL in Evolus: Your models (`…/v1`) and the Connector (`…/mcp`).
 - After a tool's arguments or description change, refresh the Connector's tool list in Evolus. After a `SYSTEM_PROMPT` change, re-paste `python scripts/evolus_text.py prompt` into the agent's instructions.
 - On the Mac, `.env` has `VLLM_BASE_URL=http://host.docker.internal:11434/v1` for Docker; run the eval with `VLLM_BASE_URL=http://localhost:11434/v1 python -m scripts.eval_agent`.

@@ -65,9 +65,10 @@ def draft_booking(
     end: str,
     task: str,
     purchase_order_id: str | None = None,
+    part_number: str | None = None,
 ) -> dict[str, Any]:
     arguments = {"engineer_id": engineer_id, "machine_id": machine_id, "start": start, "end": end, "task": task,
-                 "purchase_order_id": purchase_order_id}
+                 "purchase_order_id": purchase_order_id, "part_number": part_number}
     return call_tool(factory, "draft_booking", arguments)
 
 
