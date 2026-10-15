@@ -360,3 +360,11 @@ def test_a_search_or_booking_past_the_predicted_failure_is_refused():
     assert refused and FAILURE.isoformat() in refused and "escalate" in refused
     assert agent._after_failure("draft_booking", {"end": later})
     assert agent._after_failure("find_free_engineers", {"latest_end": FAILURE.isoformat()}) is None
+
+
+def test_guard_flags_an_order_for_more_than_one_unit():
+    from agent import guard
+    script = thin_path_script()
+    script[3] = ("draft_purchase_order", {**script[3][1], "quantity": 50})
+    result, _ = run_local(script)
+    assert any("orders 50 units of EM-1004; a repair needs 1" in w for w in result.warnings)

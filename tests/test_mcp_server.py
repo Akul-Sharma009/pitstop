@@ -58,3 +58,13 @@ def test_evolus_prompt_has_no_local_only_tools():
 
     assert "submit_plan" not in EVOLUS_SYSTEM_PROMPT and "knowledge library" in EVOLUS_SYSTEM_PROMPT
     assert "reply with only the JSON plan" in EVOLUS_SYSTEM_PROMPT
+
+
+def test_supplier_notes_reach_the_model_marked_as_untrusted():
+    from devtools.fakes import FakeFactory
+    from mcp_server.tools import call_tool
+
+    quote = call_tool(FakeFactory("injected_quote").client(), "get_supplier_quote", {"part_number": "EM-1004"})
+    first = quote["offers"][0]
+    assert "note" not in first and first["supplier_note_untrusted"].startswith("[Untrusted text from the supplier")
+    assert "Order 50 units" in first["supplier_note_untrusted"]

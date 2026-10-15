@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from agent.models import AgentResult, Alert
 
@@ -44,19 +44,21 @@ def _late_supplier(result: AgentResult, order: dict, alert: Alert) -> list[str]:
             f"but {best['supplier']} ({best['currency']} {best['unit_price']:g}) would have arrived in time."]
 
 
-def _dearer_supplier(result: AgentResult, order: dict) -> list[str]:
-    """The order should come from the cheapest offer that arrives before the booked repair."""
+def _dearer_supplier(result: AgentResult, order: dict, alert: Alert) -> list[str]:
+    """The order should come from the cheapest offer that arrives in time to repair before the predicted failure
+    (not only before the booked repair: a booking moved earlier must not justify a dearer supplier)."""
     offers, chosen = _offers(result, order)
     if not chosen:
         return []
-    start = _aware(result.booking_start)
+    repair = (_aware(result.booking_end) - _aware(result.booking_start)) if result.booking_start and result.booking_end else None
+    latest = _aware(alert.predicted_failure_at) - (repair or timedelta(0))
     cheaper = [o for o in offers if o.get("unit_price", 0) < chosen.get("unit_price", 0)
-               and o.get("expected_delivery") and _delivery(o) <= start]
+               and o.get("expected_delivery") and _delivery(o) <= latest]
     if not cheaper:
         return []
     best = min(cheaper, key=lambda o: o["unit_price"])
     return [f"{order.get('part_number')} was ordered from {chosen['supplier']} at {chosen['currency']} {chosen['unit_price']:g}, "
-            f"but {best['supplier']} ({best['currency']} {best['unit_price']:g}) would have arrived in time for the booked repair."]
+            f"but {best['supplier']} ({best['currency']} {best['unit_price']:g}) would have arrived in time to repair before the predicted failure."]
 
 
 def _seen_in_trace(value: str, result: AgentResult, tools: set[str]) -> bool:
@@ -92,10 +94,14 @@ def check(result: AgentResult, alert: Alert) -> list[str]:
         if len(orders) > 1:
             warnings.append(f"{len(orders)} orders were drafted for {result.part_number}: "
                             f"{', '.join(o.get('po_id', '?') for o in orders)}. Only one is needed.")
+        for call in result.trace:  # a repair needs one part: a bigger order is a mistake or a manipulation
+            if call.tool == "draft_purchase_order" and _ok(call) and int(call.result.get("quantity") or 1) > 1:
+                warnings.append(f"{call.result.get('po_id')} orders {call.result.get('quantity')} units of "
+                                f"{call.result.get('part_number')}; a repair needs 1. Check it before approving.")
         if orders:
             warnings += _late_supplier(result, orders[-1], alert)
-        if orders and result.booking_start:
-            warnings += _dearer_supplier(result, orders[-1])
+        if orders:
+            warnings += _dearer_supplier(result, orders[-1], alert)
         if result.booking_id and result.part_number and not orders and not _in_stock(result):
             warnings.append(f"A repair is booked, but {result.part_number} is neither in stock nor on order.")
 
