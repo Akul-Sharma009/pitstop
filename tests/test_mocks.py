@@ -166,3 +166,24 @@ def test_empty_search_window_is_refused():
     failure = (DETECTED + timedelta(hours=16)).isoformat()
     refused = client.find_free_engineers("cnc_tooling", cheap, failure, 30)
     assert refused["error"].startswith("422: the window is empty") and "faster supplier" in refused["error"]
+
+
+def test_supplier_delay_moves_the_delivery_and_keeps_the_original():
+    factory, client = demo("out_of_stock")
+    order = client.draft_purchase_order("EM-1004", 1, "M-01", "tool wear")
+    calls = len(factory.calls)
+
+    def delay(po_id, hours):
+        return factory.handle(httpx.Request("POST", f"http://mocks/supplier/purchase-orders/{po_id}/delay",
+                                            params={"hours": hours}))
+
+    first = delay(order["po_id"], 2.5).json()
+    original = datetime.fromisoformat(order["expected_delivery"])
+    assert first["expected_delivery"] == (original + timedelta(hours=3)).isoformat()  # rounded up to the hour
+    second = delay(order["po_id"], 1).json()
+    assert second["original_delivery"] == order["expected_delivery"]  # the first date is kept
+    assert second["expected_delivery"] == (original + timedelta(hours=4)).isoformat()
+    assert delay(order["po_id"], 0).status_code == 422 and delay("PO-9999", 1).status_code == 404
+    assert len(factory.calls) == calls  # a supplier event, not an agent call
+    factory.handle(httpx.Request("POST", f"http://mocks/supplier/purchase-orders/{order['po_id']}/reject"))
+    assert delay(order["po_id"], 1).status_code == 409

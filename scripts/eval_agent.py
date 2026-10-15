@@ -5,9 +5,9 @@ model and tune the prompt before the mocks and Evolus are ready.
 
 Usage: python -m scripts.eval_agent [--scenario NAME]... [--core] [--fleet] [--repeat N] [-v] [--short-manual]
 Runs every scenario in devtools/scenarios.py: the three demo scenarios plus stress scenarios (look-alike parts,
-other skills, parts that arrive too late, no part in the manual, ...) and replans after a manager's rejection;
---core runs only the demo three; --fleet runs fleet mode instead: four machines alert at once and four agents
-plan in parallel on one shared factory (devtools.scenarios.FLEET).
+other skills, parts that arrive too late, no part in the manual, ...) and replans after a manager's rejection
+or a supplier delay; --core runs only the demo three; --fleet runs fleet mode instead: four machines alert at
+once and four agents plan in parallel on one shared factory (devtools.scenarios.FLEET).
 Uses the real machine manual (manual/), as in the demo; --short-manual uses the 3-section test manual.
 Reads VLLM_BASE_URL, VLLM_API_KEY, VLLM_MODEL. With -v, prints the model's messages and reasoning between
 tool calls and writes each full run to eval-logs/.
@@ -100,6 +100,9 @@ def prepare(name: str, factory: FakeFactory) -> Replan | None:
                          (f"/calendar/bookings/{booking['booking_id']}", previous.booking_status)]:
         if status in decide:
             factory.handle(httpx.Request("POST", f"http://mocks{path}/{decide[status]}"))
+    if previous.delay_h:
+        factory.handle(httpx.Request("POST", f"http://mocks/supplier/purchase-orders/{order['po_id']}/delay",
+                                     params={"hours": previous.delay_h}))
     factory.calls.clear()
     return Replan(feedback=previous.feedback, purchase_order=factory.orders[order["po_id"]],
                   booking=factory.bookings[booking["booking_id"]])

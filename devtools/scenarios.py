@@ -24,6 +24,10 @@ READINGS = {"air_temperature_k": 298.9, "process_temperature_k": 309.1, "rotatio
 # suppliers, SGD) on purpose: the eval must not pass because the prompt was tuned on the demo's names.
 # Engineers: id → (name, skills).
 CHEAP, FAST = "ToolCo", "SpeedTool"
+# The reason the app gives the agent when a supplier delay cancels a booking (app/server.py, delay).
+DELAYED = ("The supplier delayed PO-0001 by {hours} h. Booking BK-0001 started before the new delivery, so it was "
+           "cancelled. Keep the order and book a repair after the new delivery, before the failure; if nothing fits, "
+           "escalate.")
 PARTS = {
     "EM-1004": ("Carbide end mill 10 mm 4-flute", [(CHEAP, 89.0, 24), (FAST, 145.0, 6)]),
     "EM-1006": ("Carbide end mill 6 mm 2-flute (finishing)", [(CHEAP, 64.0, 24)]),
@@ -42,6 +46,7 @@ class Previous:
     booking: tuple[str, float]  # (engineer, slot hours after NOW) the previous plan booked
     booking_status: str = "rejected"
     avoid: tuple[str, ...] = ()  # engineers the feedback rules out
+    delay_h: float = 0  # the supplier delayed the order by this much after the manager's decisions
 
 
 @dataclass
@@ -68,11 +73,11 @@ class Scenario:
 
     @property
     def delivery(self) -> datetime | None:
-        """When the part arrives if ordered at NOW from the expected supplier."""
+        """When the part arrives if ordered at NOW from the expected supplier (later if the supplier delayed it)."""
         if not self.part:
             return None
         lead = next(hours for name, _, hours in PARTS[self.part][1] if name == self.supplier)
-        return NOW + timedelta(hours=lead)
+        return NOW + timedelta(hours=lead + (self.previous.delay_h if self.previous else 0))
 
     def alert(self) -> Alert:
         wear, remaining = self.tool_wear or (None, None)
@@ -126,6 +131,13 @@ SCENARIOS = {s.name: s for s in [
     Scenario("replan_budget_frozen", "Replan: the order was rejected because purchasing is frozen: don't order, escalate.",
              slots={"E-01": [7, 30], "E-03": [33]}, search=None, search_required=False,
              previous=Previous("Purchasing is frozen until Monday: no new orders.", "rejected", ("E-01", 30))),
+    # The supplier delayed the order after the plan was made; the app cancelled the booking that no longer fits.
+    Scenario("delivery_delayed", "Replan: the part is delayed 8 h past Priya's slot, so book Wei Ling after the new delivery.",
+             slots={"E-01": [7, 30, 40], "E-03": [33]}, order=True, booking=("E-03", 33),
+             previous=Previous(DELAYED.format(hours=8), "approved", ("E-01", 30), delay_h=8)),
+    Scenario("delivery_delayed_too_late", "Replan: the part is delayed past the failure, so escalate; never book.",
+             slots={"E-01": [7, 30], "E-03": [33]}, order=True, search=None, search_required=False,
+             previous=Previous(DELAYED.format(hours=30), "approved", ("E-01", 30), delay_h=30)),
 ]}
 CORE = ["out_of_stock", "in_stock", "no_engineer"]
 
