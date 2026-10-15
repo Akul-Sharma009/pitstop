@@ -150,7 +150,8 @@ class LocalAgent:
         if name == "draft_booking" and not arguments.get("purchase_order_id") and not arguments.get("part_number") \
                 and self.in_stock and not self.delivery:
             arguments["part_number"] = self.in_stock  # from stock: the booking reserves it (shared with other machines)
-        refused = self._no_part(name) or self._before_delivery(name, arguments) or self._too_late(name, arguments)
+        refused = (self._no_part(name) or self._before_delivery(name, arguments) or self._after_failure(name, arguments)
+                   or self._too_late(name, arguments))
         if refused:
             return {"error": refused}
         result = call_tool(self.factory, name, arguments, now=self.now)
@@ -188,6 +189,16 @@ class LocalAgent:
         return (f"{chosen['supplier']} delivers {readable(delivery)}, after the predicted failure "
                 f"({readable(self.failure_at)}), so the repair could not happen in time. {best['supplier']} delivers "
                 f"{readable(best['expected_delivery'])}: order from {best['supplier']}.")
+
+    def _after_failure(self, name: str, arguments: dict[str, Any]) -> str | None:
+        """The repair must finish before the predicted failure: refuse a search or booking that ends later (the
+        model has been seen moving the failure a day to make an empty window fit)."""
+        field = {"find_free_engineers": "latest_end", "draft_booking": "end"}.get(name)
+        end = utc(arguments.get(field)) if field else None
+        if end is None or self.failure_at is None or end <= self.failure_at:
+            return None
+        return (f"{field} {arguments.get(field)} is after the predicted failure ({readable(self.failure_at)}). Use "
+                f"{self.failure_at.isoformat()}; if no repair fits before it, escalate to the manager.")
 
     def _before_delivery(self, name: str, arguments: dict[str, Any]) -> str | None:
         """The repair can't start before the ordered part arrives: refuse, so the model searches again."""

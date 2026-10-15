@@ -80,7 +80,8 @@ def check(name: str, result: AgentResult, factory: FakeFactory) -> list[str]:
             problems.append(f"expected escalated, got {result.status}")
         if bookings:
             problems.append("booked an engineer although no slot fits")
-    return problems + check_search_window(scenario, result, ordered=bool(orders))
+    placed = next((o for o in reversed(orders) if o.get("part_number") == scenario.part and o.get("expected_delivery")), None)
+    return problems + check_search_window(scenario, result, ordered=placed or bool(orders))
 
 
 def prepare(name: str, factory: FakeFactory) -> Replan | None:
@@ -107,7 +108,7 @@ def prepare(name: str, factory: FakeFactory) -> Replan | None:
                   booking=factory.bookings[booking["booking_id"]])
 
 
-def check_search_window(scenario: Scenario, result: AgentResult, ordered: bool) -> list[str]:
+def check_search_window(scenario: Scenario, result: AgentResult, ordered: dict | bool) -> list[str]:
     """The engineer search must cover delivery (or now, if nothing was ordered) → predicted failure, with the
     manual's skill and repair time. A wrong window can still produce the right-looking outcome (no slots →
     escalate), so check it directly."""
@@ -118,7 +119,8 @@ def check_search_window(scenario: Scenario, result: AgentResult, ordered: bool) 
         return ["never searched for an engineer"] if scenario.search_required else []
     args = searches[-1].arguments
     skill, minutes = scenario.search
-    expected_start = scenario.delivery if ordered else NOW
+    # The order the agent actually placed (e.g. the fast supplier when no offer is in time): search from its delivery.
+    expected_start = (utc(ordered["expected_delivery"]) if isinstance(ordered, dict) else scenario.delivery) if ordered else NOW
     problems = []
     if utc(args.get("earliest_start")) != expected_start:
         problems.append(f"engineer search starts {args.get('earliest_start')}, expected {expected_start.isoformat()}")
