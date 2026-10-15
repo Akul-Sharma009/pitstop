@@ -23,5 +23,7 @@ async def app(scope: Scope, receive: Receive, send: Send) -> None:
     if scope["type"] != "http":
         return
     request = Request(scope, receive)
-    reply = factory.handle(httpx.Request(request.method, str(request.url), content=await request.body()))
+    # Keep the headers: X-Machine-Id says which machine a call is for (fleet mode, docs/contracts.md section 3).
+    reply = factory.handle(httpx.Request(request.method, str(request.url), headers=request.headers.raw,
+                                         content=await request.body()))
     await Response(reply.content, reply.status_code, media_type="application/json")(scope, receive, send)

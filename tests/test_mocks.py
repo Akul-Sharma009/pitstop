@@ -187,3 +187,19 @@ def test_supplier_delay_moves_the_delivery_and_keeps_the_original():
     assert len(factory.calls) == calls  # a supplier event, not an agent call
     factory.handle(httpx.Request("POST", f"http://mocks/supplier/purchase-orders/{order['po_id']}/reject"))
     assert delay(order["po_id"], 1).status_code == 409
+
+
+def test_server_passes_the_machine_header_through():
+    """Over real HTTP (not only MockTransport), X-Machine-Id must reach the factory: it scopes the delivery rule,
+    reservations and the call log to the calling machine. Lost, M-04's slow pump order blocked M-01's search."""
+    client = TestClient(server.app)
+    client.post("/admin/reset", params={"scenario": "fleet"})
+    m4, m1 = {"X-Machine-Id": "M-04"}, {"X-Machine-Id": "M-01"}
+    order = client.post("/supplier/purchase-orders", headers=m4,
+                        json={"part_number": "CP-220", "quantity": 1, "machine_id": "M-04", "reason": "pump"}).json()
+    start = order["expected_delivery"]  # 72 h away
+    early = {"skill": "cnc_tooling", "earliest_start": "2020-01-01T00:00:00+00:00", "latest_end": start,
+             "duration_minutes": 30}
+    assert client.get("/calendar/engineers/free", headers=m1, params=early).status_code == 200  # not M-01's order
+    assert client.get("/calendar/engineers/free", headers=m4, params=early).status_code == 409  # M-04's own
+    assert [c["machine_id"] for c in client.get("/admin/calls").json()["calls"]] == ["M-04", "M-01", "M-04"]
