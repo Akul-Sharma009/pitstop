@@ -154,10 +154,11 @@ Streamable HTTP at `{MCP_URL}/mcp`, optional bearer token `MCP_API_TOKEN`. Tools
 
 ## 5. Screens (`app/`, port 8003)
 
-The manager approval screen and the operator summary (`app/static`), served with a small API so the page needs one address. This is the app side of the approval boundary.
+The manager approval screen and the operator summary (`app/static`), served with a small API so the page needs one address. This is the app side of the approval boundary. With `SCREENS_PASSWORD` set, every page and route needs HTTP basic auth (`SCREENS_USER`, default `manager`). When the model is offline, a plan comes back `failed` with a plain `escalation_reason` ("The AI model is offline …"); the technical error is in `warnings`.
 
 | Method | Path | Does |
 |---|---|---|
+| GET | `/api/status` | `{"agent": "online"\|"offline", "model": "online"\|"offline"\|"unknown", "backend"}`: for a "model offline" banner (the GPU instance is off between demos). From the agent service's `/health`, which checks `VLLM_BASE_URL/models` (cached 30 s) |
 | GET | `/api/latest` | `GET {AGENT_URL}/incidents/latest`; `{"alert": null, "result": null}` before the first alert |
 | GET | `/api/incidents` | fleet mode: `{"incidents": [ … ]}`, one entry per machine sorted by machine ID; each entry has the shape of `/api/latest` |
 | GET | `/api/incidents/{machine_id}` | fleet mode: that machine's latest alert and plan (shape of `/api/latest`); 404 if the machine has no alert |

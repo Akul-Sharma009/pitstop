@@ -13,9 +13,11 @@ Run: uvicorn agent.api:app --port 8002
 from __future__ import annotations
 
 import os
+import time
 from datetime import datetime, timezone
 from typing import Any
 
+import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.concurrency import run_in_threadpool
 
@@ -26,11 +28,34 @@ app = FastAPI(title="Pitstop agent")
 incidents: dict[str, dict[str, Any]] = {}  # machine_id → {"alert", "result", "received_at", "feedback", "previous"}
 
 
+MODEL_CHECK_S = 30  # how long a model check is reused (the screens poll often)
+_model_check: dict[str, Any] = {}
+
+
+def model_status() -> str:
+    """'online' if our model endpoint (VLLM_BASE_URL, the vLLM server or its stand-in) lists models, else
+    'offline' (e.g. the GPU instance is switched off to save credits). Both backends use this model."""
+    now = time.monotonic()
+    if _model_check and now - _model_check["at"] < MODEL_CHECK_S:
+        return _model_check["status"]
+    base = os.environ.get("VLLM_BASE_URL")
+    status = "unknown"
+    if base:
+        try:
+            response = httpx.get(f"{base.rstrip('/')}/models", timeout=3,
+                                 headers={"Authorization": f"Bearer {os.environ.get('VLLM_API_KEY', 'EMPTY')}"})
+            status = "online" if response.status_code == 200 else "offline"
+        except httpx.HTTPError:
+            status = "offline"
+    _model_check.update(at=now, status=status)
+    return status
+
+
 @app.get("/health")
 def health() -> dict[str, str | int]:
     sections = len(manual.load_sections())
     return {"status": "ok" if sections else "no manual", "backend": os.environ.get("AGENT_BACKEND", "local"),
-            "manual_sections": sections}
+            "manual_sections": sections, "model": model_status()}
 
 
 async def _plan(alert: Alert, replan: Replan | None = None) -> AgentResult:

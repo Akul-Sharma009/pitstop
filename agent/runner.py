@@ -58,13 +58,25 @@ def downtime(result: AgentResult) -> Downtime | None:
     )
 
 
-def failed(alert: Alert, backend: str, reason: str, trace: list[ToolCall] | None = None) -> AgentResult:
+MODEL_OFFLINE = ("The AI model is offline (its GPU server is switched off between demos to save credits), so no "
+                 "plan was made. Nothing was ordered or booked. Try again when the model is back online.")
+
+
+def model_unreachable(exc: Exception) -> bool:
+    """Our model can't be reached: no connection to vLLM, or Evolus reports our model unreachable."""
+    name = type(exc).__name__
+    return name in ("APIConnectionError", "APITimeoutError", "ConnectError", "ConnectTimeout") \
+        or "own_models.unreachable" in str(exc)
+
+
+def failed(alert: Alert, backend: str, reason: str, trace: list[ToolCall] | None = None,
+           extra: list[str] | None = None) -> AgentResult:
     return AgentResult(
         status="failed",
         machine_id=alert.machine_id,
         escalation_reason=reason,
         operator_summary="The maintenance assistant could not finish a plan. A manager has been asked to look at it.",
-        warnings=[reason],
+        warnings=[reason, *(extra or [])],
         trace=trace or [],
         backend=backend,
     )
@@ -78,7 +90,10 @@ def run(alert: Alert, agent: Any = None, backend: str | None = None, replan: Rep
         plan, trace = agent.run(alert, replan) if replan else agent.run(alert)
     except Exception as exc:  # any backend failure becomes a visible, escalated result
         log.exception("Agent run failed")
-        return failed(alert, backend, f"{type(exc).__name__}: {exc}")
+        detail = f"{type(exc).__name__}: {exc}"
+        if model_unreachable(exc):
+            return failed(alert, backend, MODEL_OFFLINE, extra=[detail])
+        return failed(alert, backend, detail)
     if replan and (order := replan.standing_order()):
         # The previous plan's order still stands: it is part of this plan, and the trace says where it came from.
         trace = [ToolCall(tool="draft_purchase_order", arguments={"from_previous_plan": True}, result=order), *trace]

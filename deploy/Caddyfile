@@ -5,12 +5,14 @@
 	handle /mcp* {
 		reverse_proxy mcp:8001
 	}
-	# Our vLLM model (OpenAI-compatible API, protected by VLLM_API_KEY), when it runs on this same machine.
+	# Our vLLM model (OpenAI-compatible API, protected by VLLM_API_KEY): on this same machine by default, or
+	# another one (MODEL_UPSTREAM=<gpu-ip>:8080 when this is a small always-on VM and the GPU instance comes and
+	# goes; the public URL stays the same).
 	handle /v1* {
-		reverse_proxy host.docker.internal:{$VLLM_PORT:8080}
+		reverse_proxy {$MODEL_UPSTREAM}
 	}
-	# The screens: manager approval and operator summary. They can approve drafts, so put basic_auth here
-	# before sharing the address widely.
+	# The screens: manager approval and operator summary. They can approve drafts: set SCREENS_PASSWORD in
+	# .env (the app then asks for a login) before sharing the address.
 	handle {
 		reverse_proxy app:8003
 	}

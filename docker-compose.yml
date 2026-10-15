@@ -35,6 +35,9 @@ services:
   app:
     build: .
     command: uvicorn app.server:app --host 0.0.0.0 --port 8003
+    env_file:   # SCREENS_PASSWORD / SCREENS_USER: a login on the screens (set it when they are public)
+      - path: .env
+        required: false
     environment:
       AGENT_URL: http://agent:8002
       MOCKS_URL: ${MOCKS_URL_DOCKER:-http://mocks:8000}
@@ -72,7 +75,8 @@ services:
     image: caddy:2.8.4
     environment:
       PUBLIC_HOST: ${PUBLIC_HOST:-}
-      VLLM_PORT: ${VLLM_PORT:-8080}
+      # The model: vLLM on this machine, or MODEL_UPSTREAM=<gpu-ip>:8080 when the GPU instance is elsewhere.
+      MODEL_UPSTREAM: ${MODEL_UPSTREAM:-host.docker.internal:${VLLM_PORT:-8080}}
     extra_hosts:
       - "host.docker.internal:host-gateway"   # reach vLLM running on the host
     ports:
