@@ -72,8 +72,9 @@ function showAlert(alert) {
   const kind = String(alert.failure_type).replace('_', ' ');
   const wear = alert.tool_wear_min != null ? `${kind} at ${Math.round(alert.tool_wear_min)} cutting min` : kind;
   const left = alert.remaining_cutting_min != null ? `about ${Math.round(alert.remaining_cutting_min)} min left` : '';
-  $('alert-text').textContent = [alert.machine_id, wear, left, `failure predicted ${date(alert.predicted_failure_at)}`]
-    .filter(Boolean).join(' · ');
+  // A simulated alert (fleet mode: M-04's pump; the detector only flags tool wear) says so wherever it shows.
+  $('alert-text').textContent = [alert.machine_id, wear, left, `failure predicted ${date(alert.predicted_failure_at)}`,
+    alert.simulated ? 'simulated alert (not from the detector)' : null].filter(Boolean).join(' · ');
   setText('op-failure', date(alert.predicted_failure_at));
 }
 
@@ -301,7 +302,12 @@ async function poll() {
   }
 }
 
+let fleetShown = null; // what the table shows, so a poll only redraws it on a change (clicks don't hit a replaced row)
+
 function renderFleet() {
+  const shown = JSON.stringify([incidents, [...draftStates], selectedMachine]);
+  if (shown === fleetShown) return;
+  fleetShown = shown;
   const focused = document.activeElement?.dataset.machine;
   $('fleet-rows').replaceChildren();
   for (const incident of incidents) {
@@ -387,10 +393,10 @@ $('load-fleet').addEventListener('click', () => {
       alert: { machine_id: id, failure_type: escalated ? 'coolant_pump' : 'tool_wear', simulated: escalated,
         predicted_failure_at: `2026-10-${escalated ? '17' : '16'}T18:00:00Z` },
       result: { ...sample, machine_id: id, status: escalated ? 'escalated' : 'awaiting_approval',
-        part_number: escalated ? 'CP-2001' : sample.part_number, part_name: escalated ? 'Coolant pump' : sample.part_name,
+        part_number: escalated ? 'CP-220' : sample.part_number, part_name: escalated ? 'Coolant pump' : sample.part_name,
         part_in_stock: n === 1, purchase_order_id: n === 2 || n === 3 ? `PO-DEMO-${n}` : null,
         expected_delivery: n === 2 || n === 3 ? sample.expected_delivery : null,
-        booking_id: escalated ? null : `BK-DEMO-${n}`, engineer_name: escalated ? null : n === 3 ? 'Wei Ling' : 'Priya Nair',
+        booking_id: escalated ? null : `BK-DEMO-${n}`, engineer_name: escalated ? null : n === 3 ? 'Wei Ling Ho' : 'Priya Nair',
         booking_start: escalated ? null : `2026-10-15T${n === 1 ? '07' : n === 2 ? '14' : '15'}:00:00Z`,
         booking_end: escalated ? null : `2026-10-15T${n === 1 ? '07' : n === 2 ? '14' : '15'}:30:00Z`,
         diagnosis: escalated ? 'Simulated coolant-pump failure: replacement cannot arrive before predicted failure.' : sample.diagnosis,

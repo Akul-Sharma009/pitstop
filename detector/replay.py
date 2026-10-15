@@ -94,7 +94,17 @@ def send_alert(alert: dict[str, Any]) -> None:
     url = os.environ.get("ALERT_URL", "http://localhost:8002/incidents")
     print(f"Sending {alert['machine_id']} to {url} (the agent plans the repair; this can take a minute)...")
     result = httpx.post(url, json=alert, timeout=600).raise_for_status().json()
-    print(f"{alert['machine_id']} result: {json.dumps(result, indent=2)}")
+    print(f"{alert['machine_id']} result: {summary(result)}")
+
+
+def summary(result: dict[str, Any]) -> str:
+    """One line per machine (the full plan, with its trace, is on the screens)."""
+    order = result.get("purchase_order_id") or "no order"
+    booking = (f"{result.get('engineer_name')} {result.get('booking_start')}" if result.get("booking_id")
+               else "no booking")
+    reason = f" ({result.get('escalation_reason')})" if result.get("status") != "awaiting_approval" else ""
+    warnings = f", {len(result['warnings'])} warning(s)" if result.get("warnings") else ""
+    return f"{result.get('status')}: {result.get('part_number')}, {order}, {booking}{reason}{warnings}"
 
 
 def replay_fleet(trained: Any, per_day: float, horizon: float, threshold: float, step: float,
@@ -187,6 +197,10 @@ def main(argv: list[str] | None = None) -> int:
         mocks = env("MOCKS_URL", "http://localhost:8000")
         httpx.post(f"{mocks}/admin/reset", params={"scenario": args.scenario}, timeout=10).raise_for_status()
         print(f"Mock factory reset to scenario {args.scenario}.")
+        try:  # the screens should not show the previous run's plans next to the new ones
+            httpx.delete(env("ALERT_URL", "http://localhost:8002/incidents"), timeout=10).raise_for_status()
+        except httpx.HTTPError as exc:
+            print(f"Could not clear the agent's previous incidents: {exc}", file=sys.stderr)
 
     if args.fleet:
         return replay_fleet(trained, per_day, horizon, threshold, step, window, args.interval, args.dry_run)
