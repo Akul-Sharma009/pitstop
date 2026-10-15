@@ -6,12 +6,18 @@ just before a demo run. The same class backs the tests and the scenario eval (`d
 
 Every call to an agent endpoint is logged as a tool call (`GET /admin/calls`), so a run in Evolus, whose
 reply has no tool calls, can still be shown and checked like a local run.
+
+Fleet mode: several machines share the engineers and the parts store. A call's machine is its `X-Machine-Id`
+header (local agent), or else the admin focus (`POST /admin/focus?machine_id=`), which the Evolus backend sets
+before each of its queued runs. A drafted booking holds its slot and reserves its part from stock until the
+manager rejects it, so two machines can't plan with the same engineer slot or the same last part.
 """
 
 from __future__ import annotations
 
 import json
 import re
+import threading
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -62,6 +68,7 @@ class MockFactory:
         self.seq = 0  # keeps counting across resets, so "calls after N" stays meaningful
         self.routes: list[tuple[str, re.Pattern[str], Callable[..., httpx.Response]]] = [
             ("POST", re.compile(r"/admin/reset"), self._reset),
+            ("POST", re.compile(r"/admin/focus"), self._focus),
             ("GET", re.compile(r"/health"), self._health),
             ("GET", re.compile(r"/admin/calls"), self._calls),
             ("GET", re.compile(r"/inventory/parts/([^/]+)"), self._inventory),
@@ -74,6 +81,7 @@ class MockFactory:
             ("GET", re.compile(r"/calendar/bookings/([^/]+)"), self._get_booking),
             ("POST", re.compile(r"/calendar/bookings/([^/]+)/(approve|reject)"), self._decide_booking),
         ]
+        self.lock = threading.Lock()  # the fleet eval runs several agents on one factory in threads
         self.reset(scenario)
 
     def reset(self, scenario: str) -> None:
@@ -90,15 +98,33 @@ class MockFactory:
         self.orders: dict[str, dict[str, Any]] = {}
         self.calls = []  # the sequence number keeps counting
         self.bookings: dict[str, dict[str, Any]] = {}
+        self.focus: str | None = None  # the machine the Evolus backend is planning for (POST /admin/focus)
 
     def handle(self, request: httpx.Request) -> httpx.Response:
-        for method, pattern, handler in self.routes:
-            match = pattern.fullmatch(request.url.path)
-            if match and request.method == method:
-                response = handler(request, *match.groups())
-                self._log(request, match.groups(), response)
-                return response
+        with self.lock:
+            for method, pattern, handler in self.routes:
+                match = pattern.fullmatch(request.url.path)
+                if match and request.method == method:
+                    response = handler(request, *match.groups())
+                    self._log(request, match.groups(), response)
+                    return response
         return _error(404, "not found")
+
+    def _machine(self, request: httpx.Request) -> str | None:
+        """The machine a call is for: the X-Machine-Id header, else the admin focus (None: not known)."""
+        return request.headers.get("x-machine-id") or self.focus
+
+    def _active(self) -> list[dict[str, Any]]:
+        """Bookings that hold their slot and part: every one the manager has not rejected."""
+        return [b for b in self.bookings.values() if b["status"] != "rejected"]
+
+    def _holder(self, engineer_id: str, start: datetime) -> dict[str, Any] | None:
+        return next((b for b in self._active() if b.get("engineer_id") == engineer_id and _utc(b["start"]) == start), None)
+
+    def _available(self, number: str) -> int:
+        """Stock on hand minus the units drafted bookings have reserved."""
+        reserved = sum(1 for b in self._active() if b.get("reserved_part") == number)
+        return max(self.stock.get(number, 0) - reserved, 0)
 
     def _log(self, request: httpx.Request, groups: tuple[str, ...], response: httpx.Response) -> None:
         """Record agent endpoint calls in the shape of the MCP tools' results (mcp_server/factory.py)."""
@@ -123,7 +149,8 @@ class MockFactory:
         else:
             result = {"slots": body} if tool == "find_free_engineers" else body
         self.seq += 1
-        self.calls.append({"seq": self.seq, "tool": tool, "arguments": arguments, "result": result})
+        self.calls.append({"seq": self.seq, "tool": tool, "arguments": arguments, "result": result,
+                           "machine_id": self._machine(request)})
 
     # --- demo control ---------------------------------------------------------------------------
 
@@ -133,6 +160,11 @@ class MockFactory:
         except ValueError as exc:
             return _error(400, str(exc))
         return httpx.Response(200, json={"scenario": self.scenario, "started": self.started.isoformat()})
+
+    def _focus(self, request: httpx.Request) -> httpx.Response:
+        """Demo/Evolus backend only: the machine that calls without an X-Machine-Id header are for."""
+        self.focus = request.url.params.get("machine_id") or None
+        return httpx.Response(200, json={"focus": self.focus})
 
     def _calls(self, request: httpx.Request) -> httpx.Response:
         """App/demo only: the agent endpoint calls after sequence number `after` (default 0)."""
@@ -152,7 +184,7 @@ class MockFactory:
         if not part:
             return _error(404, "unknown part")
         return httpx.Response(200, json={"part_number": number, "name": part["name"],
-                                         "quantity_on_hand": self.stock[number], "location": part["location"]})
+                                         "quantity_on_hand": self._available(number), "location": part["location"]})
 
     def _quote(self, request: httpx.Request, number: str) -> httpx.Response:
         offers = self.offers.get(number)
@@ -218,8 +250,11 @@ class MockFactory:
                                f"{params['latest_end']}. If the part arrives after the predicted failure, order from a "
                                "faster supplier, or escalate to the manager")
         # Demo rule, the same one the local agent enforces: once a part is on order, the repair window starts
-        # when it arrives. Here it holds for every agent, Evolus included.
-        ordered = [o for o in self.orders.values() if o["status"] != "rejected"]
+        # when it arrives. Here it holds for every agent, Evolus included. In a fleet, only the requesting
+        # machine's own orders count (another machine's order says nothing about this repair).
+        machine = self._machine(request)
+        ordered = [o for o in self.orders.values() if o["status"] != "rejected"
+                   and (machine is None or o.get("machine_id") == machine)]
         if ordered:
             last = max(ordered, key=lambda o: _utc(o["expected_delivery"]))
             if earliest < _utc(last["expected_delivery"]):
@@ -230,7 +265,8 @@ class MockFactory:
         for slot in self.slots:
             engineer = self.engineers[slot["engineer_id"]]
             fits = slot["start"] >= earliest and slot["start"] + duration <= latest
-            if skill in engineer["skills"] and fits and duration <= timedelta(minutes=slot["minutes"]):
+            held = self._holder(slot["engineer_id"], slot["start"])  # drafted for a repair (this or another machine)
+            if skill in engineer["skills"] and fits and not held and duration <= timedelta(minutes=slot["minutes"]):
                 free.append({"engineer_id": engineer["engineer_id"], "name": engineer["name"], "skills": engineer["skills"],
                              "slot_start": slot["start"].isoformat(), "slot_end": (slot["start"] + duration).isoformat()})
         return httpx.Response(200, json=sorted(free, key=lambda s: s["slot_start"]))
@@ -243,27 +279,50 @@ class MockFactory:
             return _error(422, f"bad booking: {exc}")
         if not any(s["engineer_id"] == body.get("engineer_id") and s["start"] == start for s in self.slots):
             return _error(409, "engineer is not free at that time")
+        if holder := self._holder(body.get("engineer_id"), start):
+            return _error(409, f"that slot is already held by {holder['booking_id']} ({holder.get('machine_id')}): "
+                               "search again for a free slot")
         order = self.orders.get(body.get("purchase_order_id") or "")
         if order and start < _utc(order["expected_delivery"]):
             return _error(409, f"the part for {order['po_id']} arrives {order['expected_delivery']}")
+        reserved = None
+        if not order:  # the part comes from stock: the booking reserves one unit
+            reserved = body.get("part_number") or self._last_found_in_stock(request)
+            if reserved and self._available(reserved) < 1:
+                holders = [f"{b['booking_id']} ({b.get('machine_id')})" for b in self._active()
+                           if b.get("reserved_part") == reserved]
+                return _error(409, f"no {reserved} left in stock"
+                                   + (f" (reserved for {', '.join(holders)})" if holders else "")
+                                   + f": order {reserved}, then book after it arrives")
         booking_id = f"BK-{len(self.bookings) + 1:04d}"
         booking = {**body, "booking_id": booking_id, "status": "pending_approval"}
+        if reserved:
+            booking["reserved_part"] = reserved
         self.bookings[booking_id] = booking
         return httpx.Response(200, json=booking)
+
+    def _last_found_in_stock(self, request: httpx.Request) -> str | None:
+        """For a booking without part_number (e.g. from Evolus): the part this machine last found in stock."""
+        machine = self._machine(request)
+        if machine is None:
+            return None
+        for call in reversed(self.calls):
+            result = call["result"]
+            if call["tool"] == "check_inventory" and call.get("machine_id") == machine and "error" not in result:
+                return result["part_number"] if result.get("quantity_on_hand", 0) > 0 else None
+        return None
 
     def _get_booking(self, request: httpx.Request, booking_id: str) -> httpx.Response:
         booking = self.bookings.get(booking_id)
         return httpx.Response(200, json=booking) if booking else _error(404, "unknown booking")
 
     def _decide_booking(self, request: httpx.Request, booking_id: str, decision: str) -> httpx.Response:
-        """App only. Approving takes the slot off the free list."""
+        """App only."""
         booking = self.bookings.get(booking_id)
         if not booking:
             return _error(404, "unknown booking")
         if booking["status"] != "pending_approval":
             return _error(409, f"booking is already {booking['status']}")
         booking["status"] = "approved" if decision == "approve" else "rejected"
-        if decision == "approve":
-            start = _utc(booking["start"])
-            self.slots = [s for s in self.slots if not (s["engineer_id"] == booking["engineer_id"] and s["start"] == start)]
+        # A pending or approved booking holds its slot and part; a rejected one gives both back.
         return httpx.Response(200, json=booking)

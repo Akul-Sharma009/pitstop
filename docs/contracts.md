@@ -37,9 +37,19 @@ detector ──Alert──▶ app ──Alert──▶ agent service ──tools
 
 ## 2. AgentResult (agent service → app)
 
-`GET {AGENT_URL}/incidents/latest` returns `{"alert", "result", "received_at", "feedback", "previous"}` for the latest alert; `result` is `null` while the agent is still planning; `feedback` and `previous` (the plan the manager rejected) are set after a replan; 404 before the first alert. The screens follow it (section 5).
+`GET {AGENT_URL}/incidents/latest` returns `{"alert", "result", "received_at", "feedback", "previous"}` for the most recent alert of any machine; `result` is `null` while the agent is still planning; `feedback` and `previous` (the plan the manager rejected) are set after a replan; 404 before the first alert. The screens follow it (section 5).
 
-**Replan.** `POST {AGENT_URL}/incidents/replan` with `{"feedback": "Priya is on leave on Thursday", "purchase_order": <order>|null, "booking": <booking>|null}`: the previous plan's drafts as the mocks have them now (the app sends them after a rejection). The agent plans the latest alert again with the feedback. A purchase order that is not rejected still stands: the new plan reuses it (it appears first in `trace` as `draft_purchase_order` with `{"from_previous_plan": true}`) and must not order again. Returns the new AgentResult; 404 without an alert, 409 while the agent is still planning.
+**Fleet mode** (several machines plan at once, sharing one factory). Incidents are kept per machine:
+
+| Method | Path | Returns |
+|---|---|---|
+| GET | `/incidents` | `{"incidents": [ … ]}`: every machine's latest alert and plan, sorted by machine ID; each entry has the shape of `/incidents/latest` |
+| GET | `/incidents/{machine_id}` | that machine's latest alert and plan; 404 if it has none |
+| DELETE | `/incidents` | forgets every incident → `{"cleared": n}` (the replay calls it when it resets the factory) |
+
+The local backend plans machines in parallel. The Evolus backend queues its runs one at a time and sets the factory's focus (section 3) before each, since MCP tool calls don't say which machine they are for.
+
+**Replan.** `POST {AGENT_URL}/incidents/replan` with `{"feedback": "Priya is on leave on Thursday", "machine_id": "M-01"|null, "purchase_order": <order>|null, "booking": <booking>|null}`: the previous plan's drafts as the mocks have them now (the app sends them after a rejection, with the machine of the decided order or booking). The agent plans that machine's alert again with the feedback (without `machine_id`: the most recent alert's machine). A purchase order that is not rejected still stands: the new plan reuses it (it appears first in `trace` as `draft_purchase_order` with `{"from_previous_plan": true}`) and must not order again. Returns the new AgentResult; 404 without an alert (for that machine), 409 while the agent is still planning.
 
 Response of `POST /incidents`:
 
@@ -85,11 +95,13 @@ Response of `POST /incidents`:
 
 The agent (and the MCP server) only use the endpoints marked **agent**. Approve/reject is **app only** and must never be exposed as a tool.
 
+**Machine context (fleet mode).** Several machines share the engineers and the parts store. A call is for the machine in its `X-Machine-Id` header (the local agent sends it), or else for the factory's focus (`POST /admin/focus`, set by the Evolus backend before each run). Without either, the factory behaves as for a single machine. Every logged call records its `machine_id`.
+
 ### Inventory
 
 | Method | Path | Used by | Response |
 |---|---|---|---|
-| GET | `/inventory/parts/{part_number}` | agent | `{"part_number", "name", "quantity_on_hand", "location"}`; 404 if unknown part |
+| GET | `/inventory/parts/{part_number}` | agent | `{"part_number", "name", "quantity_on_hand", "location"}`; 404 if unknown part. `quantity_on_hand` is the stock minus the units reserved by bookings the manager has not rejected |
 
 ### Supplier
 
@@ -107,13 +119,13 @@ The agent orders from the cheapest offer that arrives in time to repair before t
 
 | Method | Path | Used by | Body / response |
 |---|---|---|---|
-| GET | `/calendar/engineers/free?skill=&earliest_start=&latest_end=&duration_minutes=` | agent | `[{"engineer_id", "name", "skills", "slot_start", "slot_end"}]` — free slots fully inside the window, may be empty; 422 if the window is empty (`earliest_start` not before `latest_end`, e.g. the part arrives after the predicted failure); 409 if a part is on order and `earliest_start` is before its `expected_delivery` (demo rule: the repair can't start before the part arrives) |
-| POST | `/calendar/bookings` | agent | body `{"engineer_id", "machine_id", "start", "end", "task", "purchase_order_id"}` → `{"booking_id", "status": "pending_approval", ...body}`; 409 if the slot is not free, or if `purchase_order_id` is given and `start` is before that order's `expected_delivery` |
+| GET | `/calendar/engineers/free?skill=&earliest_start=&latest_end=&duration_minutes=` | agent | `[{"engineer_id", "name", "skills", "slot_start", "slot_end"}]` — free slots fully inside the window, may be empty (a slot held by a booking is not free); 422 if the window is empty (`earliest_start` not before `latest_end`, e.g. the part arrives after the predicted failure); 409 if a part is on order for this machine and `earliest_start` is before its `expected_delivery` (demo rule: the repair can't start before the part arrives; another machine's order doesn't count) |
+| POST | `/calendar/bookings` | agent | body `{"engineer_id", "machine_id", "start", "end", "task", "purchase_order_id", "part_number"?}` → `{"booking_id", "status": "pending_approval", "reserved_part"?, ...body}`; 409 if the slot is not free or already held by another booking (naming it), if `purchase_order_id` is given and `start` is before that order's `expected_delivery`, or if the part comes from stock and none is left (naming the bookings that reserved it) |
 | GET | `/calendar/bookings/{booking_id}` | app | the booking |
 | POST | `/calendar/bookings/{booking_id}/approve` | **app only** | booking with `status: "approved"` |
 | POST | `/calendar/bookings/{booking_id}/reject` | **app only** | booking with `status: "rejected"` |
 
-Skill for tool-wear repairs: `cnc_tooling`. Accept times with `Z` or an offset; treat times without a time zone as UTC (the LLM sometimes drops it).
+A booking holds its slot, and a booking without a purchase order reserves one unit of its part from stock (`part_number`, or else the part this machine last found in stock with `check_inventory`), until the manager rejects it. Approval keeps both. Skill for tool-wear repairs: `cnc_tooling`. Accept times with `Z` or an offset; treat times without a time zone as UTC (the LLM sometimes drops it).
 
 Implementation: `mocks/factory.py` (`MockFactory`, in-memory), served by `mocks/server.py`, seed data `mocks/seed.json`. Tests and the scenario eval use the same class with pinned test data (`devtools/fakes.py` → `FakeFactory`).
 
@@ -121,20 +133,23 @@ Implementation: `mocks/factory.py` (`MockFactory`, in-memory), served by `mocks/
 
 | Method | Path | Used by | Effect |
 |---|---|---|---|
-| POST | `/admin/reset?scenario=out_of_stock\|in_stock\|no_engineer` | app / demo | reset seed data → `{"scenario", "started"}` |
+| POST | `/admin/reset?scenario=out_of_stock\|in_stock\|no_engineer\|urgent\|fleet` | app / demo | reset seed data → `{"scenario", "started"}`; clears the focus |
+| POST | `/admin/focus?machine_id=` | agent service (Evolus backend) | the machine that calls without `X-Machine-Id` are for → `{"focus"}`; empty clears it |
 | GET | `/health` | app / demo | `{"scenario", "note"}` |
-| GET | `/admin/calls?after=<seq>` | agent service / app | `{"last", "calls": [{"seq", "tool", "arguments", "result"}]}`: every call to an **agent** endpoint, in the shape of the MCP tools' results (errors as `{"error": "<status>: <detail>"}`, free slots as `{"slots": [...]}`). The Evolus backend reads its run's trace from here. Cleared by a reset; `seq` keeps counting. |
+| GET | `/admin/calls?after=<seq>` | agent service / app | `{"last", "calls": [{"seq", "tool", "arguments", "result", "machine_id"}]}`: every call to an **agent** endpoint, in the shape of the MCP tools' results (errors as `{"error": "<status>: <detail>"}`, free slots as `{"slots": [...]}`). The Evolus backend reads its run's trace from here. Cleared by a reset; `seq` keeps counting. |
 
 Engineer slots are whole hours after the last reset (`hours_after_reset` in the seed), so reset just before each demo run (`detector.replay --scenario` does). The demo seed fits alerts with 25–45 cutting minutes left (`tests/test_mocks.py` checks this).
 
 - `out_of_stock` (thin path): the tool-wear part has `quantity_on_hand: 0`; one engineer with a free slot after delivery and before failure.
 - `in_stock`: the part is in stock; the agent should skip ordering.
 - `no_engineer`: no free slot between delivery and failure; the agent should escalate.
+- `urgent`: only the fast supplier arrives in time (run the detector with `CUTTING_MIN_PER_DAY=60`).
+- `fleet`: four machines share one EM-1004 in stock and the engineers (Priya at +7 h and +26 h, Wei Ling at +27 h, Daniel at +26 h): one tool-wear machine uses the stock part, two order it and are booked after delivery, and M-04's coolant pump (none in stock, 72 h lead time) can't arrive before its failure, so it escalates.
 
 ## 4. MCP server
 
 Streamable HTTP at `{MCP_URL}/mcp`, optional bearer token `MCP_API_TOKEN`. Tools (one per **agent** endpoint above):
-`check_inventory`, `get_supplier_quote`, `draft_purchase_order`, `find_free_engineers`, `draft_booking`.
+`check_inventory`, `get_supplier_quote`, `draft_purchase_order`, `find_free_engineers`, `draft_booking` (with optional `part_number`, for a part from stock).
 
 ## 5. Screens (`app/`, port 8003)
 
@@ -143,7 +158,7 @@ The manager approval screen and the operator summary (`app/static`), served with
 | Method | Path | Does |
 |---|---|---|
 | GET | `/api/latest` | `GET {AGENT_URL}/incidents/latest`; `{"alert": null, "result": null}` before the first alert |
-| GET | `/api/incidents` | fleet mode, in progress: `{"incidents": [ … ]}`, one entry per machine sorted by machine ID; each entry has the shape of `/api/latest` |
-| GET | `/api/incidents/{machine_id}` | fleet mode, in progress: that machine's latest alert and plan (shape of `/api/latest`); 404 if the machine has no alert |
+| GET | `/api/incidents` | fleet mode: `{"incidents": [ … ]}`, one entry per machine sorted by machine ID; each entry has the shape of `/api/latest` |
+| GET | `/api/incidents/{machine_id}` | fleet mode: that machine's latest alert and plan (shape of `/api/latest`); 404 if the machine has no alert |
 | GET | `/api/purchase-orders/{id}`, `/api/bookings/{id}` | the order or booking from the mocks (its approval status) |
-| POST | `/api/purchase-orders/{id}/approve\|reject`, `/api/bookings/{id}/approve\|reject` | the manager's decision, to the mocks' **app only** endpoints. A reject with body `{"reason": "..."}` also starts a replan in the background (`POST {AGENT_URL}/incidents/replan`) |
+| POST | `/api/purchase-orders/{id}/approve\|reject`, `/api/bookings/{id}/approve\|reject` | the manager's decision, to the mocks' **app only** endpoints. A reject with body `{"reason": "..."}` also starts a replan in the background (`POST {AGENT_URL}/incidents/replan`) for the machine of the decided order or booking |

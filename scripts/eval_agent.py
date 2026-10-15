@@ -3,10 +3,11 @@
 Checks what the agent actually did in the factory systems, not only what it claims. Use it to pick the
 model and tune the prompt before the mocks and Evolus are ready.
 
-Usage: python -m scripts.eval_agent [--scenario NAME]... [--core] [--repeat N] [-v] [--short-manual]
+Usage: python -m scripts.eval_agent [--scenario NAME]... [--core] [--fleet] [--repeat N] [-v] [--short-manual]
 Runs every scenario in devtools/scenarios.py: the three demo scenarios plus stress scenarios (look-alike parts,
 other skills, parts that arrive too late, no part in the manual, ...) and replans after a manager's rejection;
---core runs only the demo three.
+--core runs only the demo three; --fleet runs fleet mode instead: four machines alert at once and four agents
+plan in parallel on one shared factory (devtools.scenarios.FLEET).
 Uses the real machine manual (manual/), as in the demo; --short-manual uses the 3-section test manual.
 Reads VLLM_BASE_URL, VLLM_API_KEY, VLLM_MODEL. With -v, prints the model's messages and reasoning between
 tool calls and writes each full run to eval-logs/.
@@ -20,6 +21,7 @@ import os
 import re
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -32,7 +34,7 @@ from agent.models import AgentResult, Replan
 from agent.prompts import thinking_chars
 from agent.times import utc
 from devtools.fakes import MANUAL, FakeFactory
-from devtools.scenarios import CORE, NOW, SCENARIOS, Scenario
+from devtools.scenarios import CORE, FLEET, NOW, PART, SCENARIOS, CHEAP, Scenario
 
 LOG_DIR = Path("eval-logs")
 
@@ -78,7 +80,8 @@ def check(name: str, result: AgentResult, factory: FakeFactory) -> list[str]:
             problems.append(f"expected escalated, got {result.status}")
         if bookings:
             problems.append("booked an engineer although no slot fits")
-    return problems + check_search_window(scenario, result, ordered=bool(orders))
+    placed = next((o for o in reversed(orders) if o.get("part_number") == scenario.part and o.get("expected_delivery")), None)
+    return problems + check_search_window(scenario, result, ordered=placed or bool(orders))
 
 
 def prepare(name: str, factory: FakeFactory) -> Replan | None:
@@ -102,7 +105,7 @@ def prepare(name: str, factory: FakeFactory) -> Replan | None:
                   booking=factory.bookings[booking["booking_id"]])
 
 
-def check_search_window(scenario: Scenario, result: AgentResult, ordered: bool) -> list[str]:
+def check_search_window(scenario: Scenario, result: AgentResult, ordered: dict | bool) -> list[str]:
     """The engineer search must cover delivery (or now, if nothing was ordered) → predicted failure, with the
     manual's skill and repair time. A wrong window can still produce the right-looking outcome (no slots →
     escalate), so check it directly."""
@@ -113,7 +116,8 @@ def check_search_window(scenario: Scenario, result: AgentResult, ordered: bool) 
         return ["never searched for an engineer"] if scenario.search_required else []
     args = searches[-1].arguments
     skill, minutes = scenario.search
-    expected_start = scenario.delivery if ordered else NOW
+    # The order the agent actually placed (e.g. the fast supplier when no offer is in time): search from its delivery.
+    expected_start = (utc(ordered["expected_delivery"]) if isinstance(ordered, dict) else scenario.delivery) if ordered else NOW
     problems = []
     if utc(args.get("earliest_start")) != expected_start:
         problems.append(f"engineer search starts {args.get('earliest_start')}, expected {expected_start.isoformat()}")
@@ -124,6 +128,76 @@ def check_search_window(scenario: Scenario, result: AgentResult, ordered: bool) 
     if args.get("skill") != skill:
         problems.append(f"engineer search asks for skill {args.get('skill')!r}, the manual says {skill!r}")
     return problems
+
+
+def check_fleet(results: dict[str, AgentResult], factory: FakeFactory) -> list[str]:
+    """Fleet mode: no slot or part promised twice, and each machine got what the shared factory allows."""
+    problems = [f"{m} warning: {w}" for m, r in results.items() for w in r.warnings]
+    problems += [f"{m} failed: {r.escalation_reason}" for m, r in results.items() if r.status == "failed"]
+    bookings = [b for b in factory.bookings.values() if b["status"] != "rejected"]
+    orders = [o for o in factory.orders.values() if o["status"] != "rejected"]
+    slots = [(b["engineer_id"], utc(b["start"])) for b in bookings]
+    if len(slots) != len(set(slots)):
+        problems.append(f"a slot is booked twice: {sorted(slots)}")
+    reserved = sum(1 for b in bookings if b.get("reserved_part") == PART)
+    if reserved > FLEET.stock[PART]:
+        problems.append(f"{reserved} bookings reserved {PART}, but only {FLEET.stock[PART]} is in stock")
+    by_machine = {m: [b for b in bookings if b.get("machine_id") == m] for m in results}
+    for machine in FLEET.escalates:
+        if results[machine].status != "escalated" or by_machine[machine]:
+            problems.append(f"{machine}: expected escalated with no booking, got {results[machine].status} "
+                            f"and {len(by_machine[machine])} bookings")
+    wear = [m.machine_id for m in FLEET.machines if m.machine_id not in FLEET.escalates]
+    from_stock, ordered = [], []
+    for machine in wear:
+        mine = by_machine[machine]
+        machine_orders = [o for o in orders if o.get("machine_id") == machine]
+        if results[machine].status != "awaiting_approval" or len(mine) != 1:
+            problems.append(f"{machine}: expected 1 booking awaiting approval, got {len(mine)} ({results[machine].status})")
+            continue
+        slot = (mine[0]["engineer_id"], (utc(mine[0]["start"]) - NOW).total_seconds() / 3600)
+        if machine_orders:
+            ordered.append(slot)
+            if len(machine_orders) > 1 or machine_orders[0]["part_number"] != PART or machine_orders[0]["supplier"] != CHEAP:
+                problems.append(f"{machine}: expected one {PART} order from {CHEAP}, got "
+                                f"{[(o['part_number'], o['supplier']) for o in machine_orders]}")
+        else:
+            from_stock.append(slot)
+    if from_stock != [FLEET.from_stock]:
+        problems.append(f"expected one machine to use the stock part at {FLEET.from_stock}, got {from_stock}")
+    if sorted(ordered) != sorted(FLEET.after_delivery):
+        problems.append(f"expected the ordering machines at {FLEET.after_delivery}, got {sorted(ordered)}")
+    return problems
+
+
+def run_fleet(sections: list, repeat: int, verbose: bool) -> tuple[int, int]:
+    """Four agents in parallel threads on one fake factory: (passed, total) runs."""
+    passed = 0
+    for run in range(1, repeat + 1):
+        factory = FakeFactory("fleet")
+        agents = {m.machine_id: LocalAgent(factory=factory.client(), manual_sections=sections) for m in FLEET.machines}
+        start = time.time()
+        with ThreadPoolExecutor(len(FLEET.machines)) as pool:
+            futures = {m.machine_id: pool.submit(runner.run, m.alert(), agents[m.machine_id], "local")
+                       for m in FLEET.machines}
+            results = {machine: future.result() for machine, future in futures.items()}
+        problems = check_fleet(results, factory)
+        passed += not problems
+        calls = sum(len(a.transcript) for a in agents.values())
+        print(f"{'PASS' if not problems else 'FAIL'} fleet #{run}: {time.time() - start:.0f}s, {calls} model calls")
+        for machine, result in results.items():
+            booking = f"{result.engineer_name} {result.booking_start:%a %H:%M}" if result.booking_start else "no booking"
+            order = f"{result.purchase_order_id}" if result.purchase_order_id else "no order"
+            print(f"     {machine} {result.status}: {result.part_number}, {order}, {booking}")
+        for problem in problems:
+            print(f"     - {problem}")
+        if verbose:
+            for machine, agent in agents.items():
+                print(f"   {machine}:")
+                print_run(agent, results[machine])
+                print(f"     full log: {save_run(f'fleet-{machine}', run, agent, results[machine], problems)}")
+    print(f"\n{passed}/{repeat} fleet runs passed: {FLEET.about}")
+    return passed, repeat
 
 
 def speed(transcript: list[dict[str, Any]]) -> tuple[int, float, int]:
@@ -171,6 +245,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--scenario", choices=list(SCENARIOS), action="append")
     parser.add_argument("--core", action="store_true", help="only the three demo scenarios")
+    parser.add_argument("--fleet", action="store_true", help="fleet mode: four machines plan in parallel")
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("-v", "--verbose", action="store_true",
                         help="print the model's messages, reasoning and tool calls; save each run to eval-logs/")
@@ -180,6 +255,9 @@ def main() -> int:
 
     print(f"Model: {os.environ.get('VLLM_MODEL', DEFAULT_MODEL)} at {os.environ.get('VLLM_BASE_URL')}, "
           f"manual: {'short test manual' if args.short_manual else f'manual/ ({len(sections)} sections)'}")
+    if args.fleet:
+        passed, total = run_fleet(sections, args.repeat, args.verbose)
+        return 0 if passed == total else 1
     passed = total = calls_total = thinking_total = 0
     seconds_total = 0.0
     names = args.scenario or (CORE if args.core else list(SCENARIOS))

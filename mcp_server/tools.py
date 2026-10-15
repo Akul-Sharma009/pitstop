@@ -69,7 +69,9 @@ TOOL_SPECS: list[dict[str, Any]] = [
         "name": "draft_booking",
         "description": (
             "Draft a booking of an engineer's free slot for the repair. Created as pending_approval: "
-            "a manager must approve it. Returns booking_id."
+            "a manager must approve it. Returns booking_id. Link the purchase order if the part was ordered; "
+            "if it comes from stock, pass part_number so the booking reserves one unit (other machines share "
+            "the stock)."
         ),
         "parameters": {
             "type": "object",
@@ -80,6 +82,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
                 "end": {"type": "string"},
                 "task": {"type": "string"},
                 "purchase_order_id": {"type": ["string", "null"]},
+                "part_number": {"type": ["string", "null"], "description": "The part, when it comes from stock."},
             },
             "required": ["engineer_id", "machine_id", "start", "end", "task"],
         },
