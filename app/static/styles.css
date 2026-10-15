@@ -17,3 +17,17 @@ button.armed{outline:2px solid #f6d98a;outline-offset:2px}
 .reason{display:block;width:100%;margin-top:10px;font-size:13px}
 #feedback{font-size:14px}
 details.paste .actions{margin-top:4px}
+main{min-width:0}
+.fleet-actions{margin-top:20px;flex-wrap:wrap}
+.fleet-table-wrap{overflow-x:auto;margin-top:16px;border:1px solid #2c3b4c;border-radius:14px;background:#151f2d}
+.fleet-table{width:100%;border-collapse:collapse;text-align:left;font-size:13px}
+.fleet-table caption{text-align:left;padding:16px;line-height:1.6}
+.fleet-table th,.fleet-table td{padding:16px;vertical-align:top;border-top:1px solid #2c3b4c;line-height:1.6;overflow-wrap:anywhere}
+.fleet-table th{color:#94a3b8;font-size:11px}
+.fleet-table tbody tr{cursor:pointer}
+.fleet-table tbody tr:hover,.fleet-table tr.selected{background:#1e3440}
+.fleet-table .pill{display:inline-block;white-space:normal;padding:5px 9px}
+.simulated-tag{display:block;width:fit-content;margin-top:6px;padding:2px 7px;border:1px solid #75603b;border-radius:6px;color:#f6d98a;font-size:11px}
+button:focus-visible{outline:2px solid #f6d98a;outline-offset:3px}
+.pill[data-status="rejected"]{background:#45242c;color:#ffc4cc;border-color:#7a3a47}
+@media(max-width:650px){.nav{flex-wrap:wrap;gap:5px}.nav-btn{padding:12px 10px;font-size:12px}.actions{flex-wrap:wrap}.fleet-table{min-width:850px}.fleet-table-wrap{-webkit-overflow-scrolling:touch}.detail{flex-wrap:wrap}.detail b{overflow-wrap:anywhere}header .pill{display:inline-block;margin-top:8px}}

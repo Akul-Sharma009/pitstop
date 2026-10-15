@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -83,3 +84,82 @@ def test_one_odd_reading_does_not_hide_the_wear_limit(trained):
 
 def test_rows_load_with_a_byte_order_mark(tmp_path):
     assert "UDI" in load_rows(write_fixture(tmp_path / "ai4i2020.csv", rows=5))[0]
+
+
+
+def test_fleet_feeds_are_distinct_held_out_sequences(trained):
+    feeds = replay.fleet_feeds(trained.test_rows, step=8)
+    assert list(feeds) == ["M-01", "M-02", "M-03"]
+    seen = set()
+    for k, rows in enumerate(feeds.values()):
+        assert rows == replay.sequence(trained.test_rows[k::3], step=8)
+        ids = {row["UDI"] for row in rows}
+        assert ids and not seen.intersection(ids)
+        seen.update(ids)
+
+
+def test_fleet_dry_run_prints_four_contract_alerts_without_requests(trained, monkeypatch, capsys):
+    monkeypatch.setattr(replay, "ensure_data", lambda path: path)
+    monkeypatch.setattr(replay, "load_rows", lambda path: [])
+    monkeypatch.setattr(replay, "train", lambda rows, threshold: trained)
+
+    def unexpected_request(*args, **kwargs):
+        pytest.fail("dry-run must not send alerts or reset the factory")
+
+    monkeypatch.setattr(replay.httpx, "post", unexpected_request)
+    assert replay.main(["--fleet", "--scenario", "fleet", "--dry-run", "--interval", "0"]) == 0
+    output = capsys.readouterr().out
+    decoder = json.JSONDecoder()
+    alerts = [decoder.raw_decode(chunk)[0] for chunk in output.split("ALERT: ")[1:]]
+    assert [alert["machine_id"] for alert in alerts] == ["M-01", "M-02", "M-03", "M-04"]
+    for alert in alerts[:3]:
+        parsed = Alert(**alert)
+        assert parsed.failure_type == "tool_wear" and not parsed.simulated
+        assert 0 <= parsed.remaining_cutting_min <= 45
+        assert parsed.predicted_failure_at > parsed.detected_at
+    coolant = Alert(**alerts[3])
+    assert coolant.simulated and coolant.failure_type == "coolant_pump"
+    assert coolant.tool_wear_min is None and coolant.remaining_cutting_min is None
+    assert coolant.risk == 0.8
+    assert coolant.predicted_failure_at - coolant.detected_at == timedelta(hours=40)
+    # Each feed starts three replay ticks after the preceding one.
+    lines = [line for line in output.splitlines() if "tool wear " in line and " | torque " in line]
+    assert [line[:4] for line in lines[:5]] == ["M-01", "M-01", "M-01", "M-01", "M-02"]
+    assert next(i for i, line in enumerate(lines) if line.startswith("M-03")) == 11
+
+
+def test_fleet_sends_in_background_after_reset(trained, monkeypatch):
+    monkeypatch.setattr(replay, "ensure_data", lambda path: path)
+    monkeypatch.setattr(replay, "load_rows", lambda path: [])
+    monkeypatch.setattr(replay, "train", lambda rows, threshold: trained)
+    coolant_sent = threading.Event()
+    sent = []
+    main_thread = threading.get_ident()
+
+    def post(url, **kwargs):
+        if url.endswith("/admin/reset"):
+            assert not sent and kwargs["params"] == {"scenario": "fleet"}
+            sent.append("reset")
+        else:
+            assert sent[0] == "reset"
+            assert threading.get_ident() != main_thread
+            machine = kwargs["json"]["machine_id"]
+            sent.append(machine)
+            if machine == "M-04":
+                coolant_sent.set()
+            else:
+                # Earlier requests remain blocked while all other machines replay and send.
+                assert coolant_sent.wait(timeout=10)
+        return httpx.Response(200, json={}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(replay.httpx, "post", post)
+    assert replay.main(["--fleet", "--scenario", "fleet", "--interval", "0"]) == 0
+    assert sent[0] == "reset" and sorted(sent[1:]) == ["M-01", "M-02", "M-03", "M-04"]
+
+
+def test_fleet_reports_background_send_failure(trained, monkeypatch):
+    def fail(alert):
+        raise httpx.ConnectError("agent offline")
+
+    monkeypatch.setattr(replay, "send_alert", fail)
+    assert replay.replay_fleet(trained, 20, 45, 0.5, 8, 3, 0, False) == 1
