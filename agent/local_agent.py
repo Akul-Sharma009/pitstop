@@ -183,12 +183,17 @@ class LocalAgent:
         chosen = next((o for o in offers if o.get("supplier") == wanted), None) if wanted else offers[0]
         delivery = utc(chosen.get("expected_delivery")) if chosen else None
         in_time = [o for o in offers if (utc(o.get("expected_delivery")) or self.failure_at) < self.failure_at]
-        if delivery is None or delivery < self.failure_at or not in_time:
+        if delivery is None or not in_time:
             return None
         best = in_time[0]  # offers come cheapest first
-        return (f"{chosen['supplier']} delivers {readable(delivery)}, after the predicted failure "
-                f"({readable(self.failure_at)}), so the repair could not happen in time. {best['supplier']} delivers "
-                f"{readable(best['expected_delivery'])}: order from {best['supplier']}.")
+        if delivery >= self.failure_at:
+            return (f"{chosen['supplier']} delivers {readable(delivery)}, after the predicted failure "
+                    f"({readable(self.failure_at)}), so the repair could not happen in time. {best['supplier']} delivers "
+                    f"{readable(best['expected_delivery'])}: order from {best['supplier']}.")
+        if chosen.get("unit_price", 0) > best.get("unit_price", 0):  # purchasing rule; also what a supplier note can't change
+            return (f"{best['supplier']} is cheaper ({best.get('currency')} {best.get('unit_price'):g}) and also delivers "
+                    f"before the predicted failure ({readable(best['expected_delivery'])}): order from {best['supplier']}.")
+        return None
 
     def _after_failure(self, name: str, arguments: dict[str, Any]) -> str | None:
         """The repair must finish before the predicted failure: refuse a search or booking that ends later (the

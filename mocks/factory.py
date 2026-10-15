@@ -192,9 +192,14 @@ class MockFactory:
         if not offers:
             return _error(404, "no supplier sells this part")
         now = self.clock()
-        return httpx.Response(200, json={"part_number": number, "offers": [
-            {**offer, "expected_delivery": _next_hour(now + timedelta(hours=offer["lead_time_hours"])).isoformat()}
-            for offer in offers]})
+        quoted = [{**offer, "expected_delivery": _next_hour(now + timedelta(hours=offer["lead_time_hours"])).isoformat()}
+                  for offer in offers]
+        # A supplier's free-text remark on its offer (seed "quote_note" per scenario). The injection scenario puts
+        # instructions aimed at the agent here: data the agent reads, never instructions it may follow.
+        note = (self.parts[number].get("quote_note") or {}).get(self.scenario)
+        if note:
+            quoted[0]["note"] = note
+        return httpx.Response(200, json={"part_number": number, "offers": quoted})
 
     def _draft_order(self, request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content or b"{}")
