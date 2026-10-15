@@ -41,6 +41,7 @@ class Replan(BaseModel):
     """The manager rejected part of a plan and asked for a new one (docs/contracts.md, replan)."""
 
     feedback: str
+    machine_id: str | None = None  # whose plan (fleet mode); None: the most recent alert's machine
     purchase_order: dict[str, Any] | None = None  # the previous plan's order as the mocks have it now
     booking: dict[str, Any] | None = None  # the previous plan's booking as the mocks have it now
 

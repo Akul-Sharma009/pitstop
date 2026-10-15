@@ -142,18 +142,64 @@ SCENARIOS = {s.name: s for s in [
 CORE = ["out_of_stock", "in_stock", "no_engineer"]
 
 
+@dataclass
+class FleetMachine:
+    machine_id: str
+    failure_type: str = "tool_wear"
+    failure_in_h: float = 48
+    tool_wear: tuple[float, float] | None = (172, 38)
+
+    def alert(self) -> Alert:
+        wear, remaining = self.tool_wear or (None, None)
+        return Alert(machine_id=self.machine_id, failure_type=self.failure_type, risk=0.93, tool_wear_min=wear,
+                     remaining_cutting_min=remaining, detected_at=NOW,
+                     predicted_failure_at=NOW + timedelta(hours=self.failure_in_h), readings=READINGS)
+
+
+@dataclass
+class Fleet:
+    """Fleet mode: four machines alert at once and share one factory (the same engineers and parts store).
+    A correct fleet: one tool-wear machine takes the only EM-1004 in stock and the earliest slot; the other two
+    order it from the cheap supplier and get the two slots after delivery (one each); M-04's coolant pump
+    can't arrive before its failure, so it escalates. No slot or part is promised twice."""
+
+    about: str
+    machines: list[FleetMachine]
+    stock: dict[str, int]
+    slots: dict[str, list[float]]
+    from_stock: tuple[str, float]  # (engineer, slot hours after NOW) the stock machine gets
+    after_delivery: list[tuple[str, float]]  # the slots the two ordering machines get, in any order
+    escalates: tuple[str, ...]  # machines that must escalate
+
+
+FLEET = Fleet(
+    "Four machines, one EM-1004 in stock and shared engineers: one uses stock, two order, M-04 escalates.",
+    machines=[FleetMachine("M-01", failure_in_h=48, tool_wear=(172, 38)),
+              FleetMachine("M-02", failure_in_h=40, tool_wear=(180, 33)),
+              FleetMachine("M-03", failure_in_h=44, tool_wear=(176, 36)),
+              FleetMachine("M-04", failure_type="coolant_pump", failure_in_h=40, tool_wear=None)],
+    stock={PART: 1, "EM-1006": 5},
+    slots={"E-01": [7, 26], "E-03": [27], "E-02": [26]},
+    from_stock=("E-01", 7),
+    after_delivery=[("E-01", 26), ("E-03", 27)],
+    escalates=("M-04",),
+)
+
+
 def seed() -> dict:
     """Mock factory seed data for every scenario (mocks/factory.py format)."""
     return {
         "note": "Test data pinned to NOW; see devtools/scenarios.py.",
         "parts": [
             {"part_number": number, "name": name, "location": "B-3",
-             "stock": {s.name: s.stock.get(number, 0) for s in SCENARIOS.values()},
+             "stock": {**{s.name: s.stock.get(number, 0) for s in SCENARIOS.values()},
+                       "fleet": FLEET.stock.get(number, 0)},
              "suppliers": [{"supplier": supplier, "unit_price": price, "currency": "EUR", "lead_time_hours": lead}
                            for supplier, price, lead in offers]}
             for number, (name, offers) in PARTS.items()
         ],
         "engineers": [{"engineer_id": eid, "name": name, "skills": skills} for eid, (name, skills) in ENGINEERS.items()],
-        "slots": {s.name: [{"engineer_id": eid, "hours_after_reset": h} for eid, hours in s.slots.items() for h in hours]
-                  for s in SCENARIOS.values()},
+        "slots": {**{s.name: [{"engineer_id": eid, "hours_after_reset": h} for eid, hours in s.slots.items()
+                              for h in hours] for s in SCENARIOS.values()},
+                  "fleet": [{"engineer_id": eid, "hours_after_reset": h} for eid, hours in FLEET.slots.items() for h in hours]},
     }

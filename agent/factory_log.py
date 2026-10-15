@@ -24,6 +24,10 @@ class FactoryLog:
         response.raise_for_status()
         return response.json()
 
+    def focus(self, machine_id: str | None) -> None:
+        """Tell the factory which machine the next calls are for (MCP calls carry no machine of their own)."""
+        self._http.post("/admin/focus", params={"machine_id": machine_id or ""}).raise_for_status()
+
     def last(self) -> int:
         """The sequence number of the latest call so far."""
         return int(self._get(0)["last"])

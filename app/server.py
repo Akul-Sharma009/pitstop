@@ -2,6 +2,7 @@
 served together with a small API so the page needs one address and no CORS:
 
   GET  /api/latest                          latest alert and plan, from the agent service
+  GET  /api/incidents[/{machine_id}]        every machine's latest alert and plan, or one machine's (fleet mode)
   GET  /api/{purchase-orders|bookings}/{id}  an order or booking, from the mock factory
   POST /api/{purchase-orders|bookings}/{id}/{approve|reject}   the manager's decision, to the mock factory;
        a reject with {"reason": "..."} also asks the agent for a new plan with that reason (replan)
@@ -66,6 +67,24 @@ def latest() -> Any:
     return relay(response)
 
 
+@app.get("/api/incidents")
+def incidents() -> Any:
+    """Fleet mode: every machine's latest alert and plan, sorted by machine ID."""
+    try:
+        return relay(client("agent").get("/incidents"))
+    except httpx.HTTPError:
+        raise HTTPException(503, "the agent service is not reachable")
+
+
+@app.get("/api/incidents/{machine_id}")
+def machine_incident(machine_id: str) -> Any:
+    """Fleet mode: one machine's latest alert and plan (404 if it has none)."""
+    try:
+        return relay(client("agent").get(f"/incidents/{machine_id}"))
+    except httpx.HTTPError:
+        raise HTTPException(503, "the agent service is not reachable")
+
+
 @app.get("/api/{kind}/{item_id}")
 def get_item(kind: str, item_id: str) -> JSONResponse:
     return relay(client("mocks").get(_path(kind, item_id)))
@@ -73,12 +92,13 @@ def get_item(kind: str, item_id: str) -> JSONResponse:
 
 @app.post("/api/purchase-orders/{po_id}/delay")
 def delay(po_id: str, body: dict[str, Any] | None = Body(None)) -> JSONResponse:
-    """The supplier delays an order (demo control). Re-check the latest plan's booking against the new delivery."""
+    """The supplier delays an order (demo control). Re-check the booking of the order's machine's plan against
+    the new delivery."""
     response = client("mocks").post(f"{PATHS['purchase-orders']}/{po_id}/delay", params={"hours": (body or {}).get("hours")})
     if response.status_code != 200:
         return relay(response)
     order = response.json()
-    result = latest_result()
+    result, machine = plan_of(order.get("machine_id"))
     booking = None
     if result.get("purchase_order_id") == po_id and result.get("booking_id"):
         found = client("mocks").get(_path("bookings", result["booking_id"]))
@@ -101,16 +121,21 @@ def delay(po_id: str, body: dict[str, Any] | None = Body(None)) -> JSONResponse:
                 f"{readable(order.get('original_delivery'))}. Booking {booking['booking_id']} started before that, "
                 "so it was cancelled. Keep the order and book a repair after the new delivery, before the failure; "
                 "if nothing fits, escalate.")
-    threading.Thread(target=replan, args=(feedback,), daemon=True).start()
+    threading.Thread(target=replan, args=(feedback, machine), daemon=True).start()
     reply.update(action="replanning", message=(
         f"{po_id} now arrives {arrives}, after the planned repair, so booking {booking['booking_id']} was cancelled. "
         "The agent is making a new plan."))
     return JSONResponse(reply)
 
 
-def latest_result() -> dict[str, Any]:
+def plan_of(machine_id: str | None) -> tuple[dict[str, Any], str | None]:
+    """(that machine's latest plan, the machine); without a machine, or if it has no alert: the latest alert's."""
+    if machine_id:
+        response = client("agent").get(f"/incidents/{machine_id}")
+        if response.status_code == 200:
+            return response.json().get("result") or {}, machine_id
     response = client("agent").get("/incidents/latest")
-    return (response.json().get("result") or {}) if response.status_code == 200 else {}
+    return (response.json().get("result") or {}) if response.status_code == 200 else {}, None
 
 
 @app.post("/api/{kind}/{item_id}/{action}")
@@ -121,13 +146,14 @@ def decide(kind: str, item_id: str, action: str, body: dict[str, Any] | None = B
     reason = str((body or {}).get("reason") or "").strip()
     if action == "reject" and reason and response.status_code == 200:
         # The agent takes a while: replan in the background; the page follows it through /api/latest.
-        threading.Thread(target=replan, args=(reason,), daemon=True).start()
+        machine = response.json().get("machine_id")  # whose plan it was (fleet mode)
+        threading.Thread(target=replan, args=(reason, machine), daemon=True).start()
     return relay(response)
 
 
-def replan(reason: str) -> None:
+def replan(reason: str, machine_id: str | None = None) -> None:
     """Send the manager's reason and the previous plan's drafts, as the mocks have them now, to the agent."""
-    result = latest_result()
+    result, machine_id = plan_of(machine_id)
 
     def current(kind: str, item_id: str | None) -> dict[str, Any] | None:
         if not item_id:
@@ -135,7 +161,8 @@ def replan(reason: str) -> None:
         response = client("mocks").get(_path(kind, item_id))
         return response.json() if response.status_code == 200 else None
 
-    body = {"feedback": reason, "purchase_order": current("purchase-orders", result.get("purchase_order_id")),
+    body = {"feedback": reason, "machine_id": machine_id,
+            "purchase_order": current("purchase-orders", result.get("purchase_order_id")),
             "booking": current("bookings", result.get("booking_id"))}
     client("agent").post("/incidents/replan", json=body, timeout=600)
 

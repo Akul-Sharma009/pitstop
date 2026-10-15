@@ -53,7 +53,8 @@ Work through these steps with your tools:
    earliest_start = the later of now and expected_delivery (now if the part is in stock),
    latest_end = predicted_failure_at, duration_minutes = the repair time from the manual.
    If you ordered the part, earliest_start must be the order's expected_delivery.
-   If there is a slot, draft_booking for the earliest one, linking the purchase order if any.
+   If there is a slot, draft_booking for the earliest one, linking the purchase order if you ordered the part,
+   or passing part_number if the part comes from stock.
    If there is no slot, do not book: escalate to the manager and say why.
 5. Finish: call submit_plan exactly once. Order and booking IDs, times and the engineer are taken from
    your tool results automatically; what matters in the plan is the status, diagnosis, repair steps,
@@ -63,6 +64,9 @@ Rules:
 - Use only part numbers, repair steps and times that appear in the manual or in tool results. Never invent
   them. If the manual does not give what you need, escalate.
 - Never claim an order or booking is confirmed: it is waiting for manager approval.
+- Other machines in the factory share the engineers and the parts store, and their agents plan at the same
+  time. If a tool says a slot is already held or a part is reserved for another booking, don't retry it:
+  search again for another slot, or order the part if none is left in stock.
 - When you mention a time, copy its *_when text from the tool result (e.g. "today (Wed 14 Oct) 15:00 UTC");
   don't work out dates yourself.
 - When you escalate, the operator_summary must say plainly that no engineer is booked yet and that the

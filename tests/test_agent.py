@@ -286,7 +286,7 @@ def test_no_downtime_figure_without_a_booking():
 
 
 def test_latest_incident_is_kept_for_the_screens(monkeypatch):
-    monkeypatch.setattr(api, "latest", {})
+    monkeypatch.setattr(api, "incidents", {})
     monkeypatch.setattr(runner, "make_agent", lambda backend=None: LocalAgent(
         llm=ScriptedLLM(thin_path_script()), factory=FakeFactory().client(), manual_sections=MANUAL, model="test"
     ))
@@ -302,7 +302,7 @@ def test_replan_endpoint_plans_again_with_the_feedback(monkeypatch):
     from agent.prompts import replan_message
     from agent.models import Replan
 
-    monkeypatch.setattr(api, "latest", {})
+    monkeypatch.setattr(api, "incidents", {})
     llms = []
 
     def make(backend=None):
