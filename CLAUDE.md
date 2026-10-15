@@ -62,11 +62,11 @@ Needed for the submission (live URL) and for Evolus (MCP server must be publicly
 
 ## Status and risks
 
-Status as of **Thu 15 Oct, midday** (update this section at the end of each day).
+Status as of **Thu 15 Oct, evening** (update this section at the end of each day).
 
 | Part | Owner | Status |
 |---|---|---|
-| Repo, Docker, README, licence, contracts | Akul | Done, on `master` (PRs #1–#8) |
+| Repo, Docker, README, licence, contracts | Akul | Done, on `master` (PRs #1–#14) |
 | Agent service + guardrails | Akul | Done: 6/6 on `scripts.eval_agent` (Ollama stand-in, ~2 s per model call) |
 | MCP server | Akul | Done; connected to Evolus as a manual Connector (5 tools) through a Cloudflare tunnel |
 | Model choice | Akul | Qwen3-30B-A3B-Instruct-2507 (see Architecture) |
@@ -104,14 +104,16 @@ Plan to the deadline (agreed 14 Oct, re-dated the same evening: Wed 14 already c
 | Sat 17 PM | Repo cleanup (internal docs like `docs/fleet-tasks.md` and the planning parts of `CLAUDE.md`; the teammate adds his research notebooks under `research/` in his own PR; delete his old upload branches once he agrees) and README rewrite for judges, with a Team section; fresh-clone README test; demo video on AMD (if AMD failed: on the stand-in, said plainly); slides, cover image, descriptions and tags (Claude drafts, Akul reviews) |
 | Sun 18 AM | Final checks and upload; **submit by 12:00 SGT**. No building or recording on Sunday |
 
-Next up (handed off from the cloud session, Thu 15 Oct midday), in this order:
-1. **Fleet backend (Claude), branch `fleet-mode`.** That branch holds only old docs commits: reset it to `master` first (`git checkout -B fleet-mode master`). Build Claude's part of the design below. Don't edit `detector/` or `app/static/` while the teammate's branches are open.
+Thu 15 Oct (local session): fleet backend (PR #10), delivery delay (#11), hidden-instruction test (#12), hosting prep (#13) and the Gemma option (#14) all merged; full eval on the stand-in 32/34, both failures fixed and re-run 5/5. Branches deleted on GitHub except the teammate's five old upload branches (nothing the product needs; his failure-model notebook is worth keeping, see the Sat plan) and whatever he has open.
+
+Next up (Fri 16 Oct), in this order:
+1. ~~Fleet backend~~: done (PR #10). Don't edit `detector/` or `app/static/` while the teammate's branches are open.
 2. **Review the teammate's PRs** (`fleet-replay`, `fleet-screens`) when he opens them. Take the remaining cutting minutes he reports from the real AI4I data to finalise the `fleet` seed slots.
 3. ~~Delivery delay~~: done (PR #11).
 4. ~~Hidden instructions in tool data~~: done (PR #12, see the status table).
 5. ~~Hosting prep~~: done (PR #13). Still to do: the "model offline" banner in `app/static/` once `fleet-screens` merges (from `/api/status`).
 6. ~~Gemma 4 option~~: done (PR #14): `VLLM_PRESET=gemma4` in `serve.sh` (vLLM recipe: `vllm/vllm-openai-rocm`, gemma4 parsers, vLLM's Gemma 4 tool template), side by side with Qwen (`VLLM_PORT=8081 VLLM_GPU_MEM=0.45`); setup guide "Optional: try Gemma 4 beside Qwen". Untested until AMD.
-7. Fri: AMD (credits or pay by evening), eval on AMD for both models, operator chat via the Evolus widget. Sat PM: submission materials (Claude drafts title, descriptions, tags, cover image, slides, video script).
+7. **Fri: AMD** (credits, or pay for an MI300X by evening; Akul decides). Then: `serve.sh` (Qwen; Gemma beside it), check and eval on AMD for both models (setup guide), Evolus model switched to the AMD endpoint, fleet eval on the MI300X, the live URL (Akul decides: small always-on VM in front, recommended, or the AMD instance alone), the "model offline" banner once `fleet-screens` is merged, operator chat via the Evolus widget if time allows. Sat PM: submission materials (Claude drafts title, descriptions, tags, cover image, slides, video script).
 8. **New alert for a machine with an open plan** (branch `realert`, ~2–3 h, Fri night or Sat before the freeze; cut first). One feature covering two cases, decided in the agent service before the agent runs, reusing delivery delay's re-check of a plan against new facts:
    - *Repeat alert*, failure time about the same: keep the open plan, don't ask the manager again. (Not just a test: today a second plan can't reuse the pending order, because the agent only learns of it from the mocks' 409.)
    - *Sensor got worse*, failure now before the booked repair: replan with that reason, reusing the order: an earlier slot, or escalate. Open decision for Akul: may the app cancel a pending cheap order so the agent can order from the fast supplier (as delivery delay cancels a pending booking)? The agent itself never cancels or rejects.
