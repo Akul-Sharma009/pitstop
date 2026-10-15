@@ -141,7 +141,7 @@ def test_fleet_sends_in_background_after_reset(trained, monkeypatch):
             assert not sent and kwargs["params"] == {"scenario": "fleet"}
             sent.append("reset")
         else:
-            assert sent[0] == "reset"
+            assert sent[:2] == ["reset", "clear"]
             assert threading.get_ident() != main_thread
             machine = kwargs["json"]["machine_id"]
             sent.append(machine)
@@ -152,9 +152,15 @@ def test_fleet_sends_in_background_after_reset(trained, monkeypatch):
                 assert coolant_sent.wait(timeout=10)
         return httpx.Response(200, json={}, request=httpx.Request("POST", url))
 
+    def delete(url, **kwargs):  # the replay clears the previous run's incidents after the reset
+        assert sent == ["reset"] and url.endswith("/incidents")
+        sent.append("clear")
+        return httpx.Response(200, json={"cleared": 0}, request=httpx.Request("DELETE", url))
+
     monkeypatch.setattr(replay.httpx, "post", post)
+    monkeypatch.setattr(replay.httpx, "delete", delete)
     assert replay.main(["--fleet", "--scenario", "fleet", "--interval", "0"]) == 0
-    assert sent[0] == "reset" and sorted(sent[1:]) == ["M-01", "M-02", "M-03", "M-04"]
+    assert sent[:2] == ["reset", "clear"] and sorted(sent[2:]) == ["M-01", "M-02", "M-03", "M-04"]
 
 
 def test_fleet_reports_background_send_failure(trained, monkeypatch):
@@ -163,3 +169,12 @@ def test_fleet_reports_background_send_failure(trained, monkeypatch):
 
     monkeypatch.setattr(replay, "send_alert", fail)
     assert replay.replay_fleet(trained, 20, 45, 0.5, 8, 3, 0, False) == 1
+
+
+def test_fleet_prints_one_line_per_result():
+    line = replay.summary({"status": "awaiting_approval", "part_number": "EM-1004", "purchase_order_id": "PO-0001",
+                           "booking_id": "BK-0001", "engineer_name": "Priya Nair", "booking_start": "2026-10-16T15:00:00Z",
+                           "warnings": [], "trace": [{"tool": "search_manual", "result": "pages of manual text"}]})
+    assert line == "awaiting_approval: EM-1004, PO-0001, Priya Nair 2026-10-16T15:00:00Z" and "\n" not in line
+    escalated = replay.summary({"status": "escalated", "part_number": "CP-220", "escalation_reason": "Pump arrives too late."})
+    assert escalated == "escalated: CP-220, no order, no booking (Pump arrives too late.)"
