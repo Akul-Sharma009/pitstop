@@ -12,6 +12,7 @@ class Alert(BaseModel):
     machine_id: str
     failure_type: str
     risk: float
+    simulated: bool = False
     tool_wear_min: float | None = None
     remaining_cutting_min: float | None = None
     detected_at: datetime

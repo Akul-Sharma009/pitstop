@@ -31,7 +31,7 @@ detector ──Alert──▶ app ──Alert──▶ agent service ──tools
 }
 ```
 
-`simulated` (optional, default `false`; fleet mode, in progress): `true` for an alert the detector did not produce. In fleet mode M-04's coolant-pump alert is simulated, since the failure model only flags tool wear; the screens label it.
+`simulated` (optional boolean, default `false`): `true` for an alert the detector did not produce. In fleet mode M-04's coolant-pump alert is simulated, since the failure model only flags tool wear; the screens label it. This alert has `failure_type: "coolant_pump"`, null `tool_wear_min` and `remaining_cutting_min`, `risk: 0.8`, and `predicted_failure_at` 40 hours after detection. M-01, M-02, and M-03 use distinct held-out AI4I feeds and retain the default `simulated: false`.
 
 `predicted_failure_at` is calendar time derived from `remaining_cutting_min` with the detector's stated assumption (`CUTTING_MIN_PER_DAY`, default 20). `remaining_cutting_min` is the gap between the current tool wear and the wear at which the failure model starts flagging failure for these readings. Both use the model's score averaged over the last few readings. `risk` is the highest such score within the alert horizon (`ALERT_HORIZON_MIN`), so it is at least the alert threshold whenever an alert is sent: uncalibrated, not a probability. See `detector/model.py`.
 
