@@ -98,6 +98,7 @@ The agent (and the MCP server) only use the endpoints marked **agent**. Approve/
 | GET | `/supplier/purchase-orders/{po_id}` | app | the order |
 | POST | `/supplier/purchase-orders/{po_id}/approve` | **app only** | order with `status: "approved"` |
 | POST | `/supplier/purchase-orders/{po_id}/reject` | **app only** | order with `status: "rejected"` |
+| POST | `/supplier/purchase-orders/{po_id}/delay?hours=N` | **app / demo only** | a supplier-side event: `expected_delivery` moves N hours later (rounded up to the hour); the first delay keeps the old date as `original_delivery` → the order; 409 if the order was rejected, 422 unless 0 < N ≤ 240 |
 
 The agent orders from the cheapest offer that arrives in time to repair before the predicted failure (the guard warns when a dearer one was chosen without need, or when the order arrives after the predicted failure while another offer was in time; the local agent refuses such an order). One open order per part and machine: `POST /supplier/purchase-orders` returns 409 (naming the open order) while a non-rejected order for the same part and machine exists. `expected_delivery` = creation time + `lead_time_hours`, rounded up to the whole hour; `total_price` = `unit_price` × `quantity`. `POST /supplier/purchase-orders` returns 404 for a part the supplier does not sell (same as the quote), so an invented part number can never be ordered.
 
@@ -143,3 +144,4 @@ The manager approval screen and the operator summary (`app/static`), served with
 | GET | `/api/latest` | `GET {AGENT_URL}/incidents/latest`; `{"alert": null, "result": null}` before the first alert |
 | GET | `/api/purchase-orders/{id}`, `/api/bookings/{id}` | the order or booking from the mocks (its approval status) |
 | POST | `/api/purchase-orders/{id}/approve\|reject`, `/api/bookings/{id}/approve\|reject` | the manager's decision, to the mocks' **app only** endpoints. A reject with body `{"reason": "..."}` also starts a replan in the background (`POST {AGENT_URL}/incidents/replan`) |
+| POST | `/api/purchase-orders/{id}/delay` | demo control: body `{"hours": N}`, the supplier delays the order (mocks `…/delay`). If the latest plan's booking for that order now starts before the new delivery: a **pending** booking is rejected automatically and the agent replans with the reason ("part delayed …"); an **approved** booking is left alone and the manager is told to decide. → `{"order", "booking", "action": "replanning"\|"manager_must_decide"\|"none", "message"}` |

@@ -69,6 +69,7 @@ class MockFactory:
             ("POST", re.compile(r"/supplier/purchase-orders"), self._draft_order),
             ("GET", re.compile(r"/supplier/purchase-orders/([^/]+)"), self._get_order),
             ("POST", re.compile(r"/supplier/purchase-orders/([^/]+)/(approve|reject)"), self._decide_order),
+            ("POST", re.compile(r"/supplier/purchase-orders/([^/]+)/delay"), self._delay_order),
             ("GET", re.compile(r"/calendar/engineers/free"), self._free),
             ("POST", re.compile(r"/calendar/bookings"), self._draft_booking),
             ("GET", re.compile(r"/calendar/bookings/([^/]+)"), self._get_booking),
@@ -202,6 +203,23 @@ class MockFactory:
         if order["status"] != "pending_approval":
             return _error(409, f"order is already {order['status']}")
         order["status"] = "approved" if decision == "approve" else "rejected"
+        return httpx.Response(200, json=order)
+
+    def _delay_order(self, request: httpx.Request, po_id: str) -> httpx.Response:
+        """Demo only: the supplier delays an order. Never exposed to the agent or the MCP server."""
+        order = self.orders.get(po_id)
+        if not order:
+            return _error(404, "unknown purchase order")
+        if order["status"] == "rejected":
+            return _error(409, "order is rejected")
+        try:
+            hours = float(request.url.params.get("hours", ""))
+        except ValueError:
+            hours = 0
+        if not 0 < hours <= 240:
+            return _error(422, "hours must be between 0 and 240")
+        order.setdefault("original_delivery", order["expected_delivery"])
+        order["expected_delivery"] = _next_hour(_utc(order["expected_delivery"]) + timedelta(hours=hours)).isoformat()
         return httpx.Response(200, json=order)
 
     # --- engineer calendar ----------------------------------------------------------------------

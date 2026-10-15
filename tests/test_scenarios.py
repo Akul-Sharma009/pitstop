@@ -272,3 +272,29 @@ def test_paying_for_speed_without_need_is_flagged():
     result, factory = run("out_of_stock", steps)
     assert any("ToolCo (EUR 89) would have arrived in time" in w for w in result.warnings)
     assert any("ordered from SpeedTool, expected ToolCo" in p for p in check("out_of_stock", result, factory))
+
+
+def test_delayed_part_is_rebooked_after_the_new_delivery():
+    from scripts.eval_agent import prepare
+
+    s = SCENARIOS["delivery_delayed"]
+    factory = FakeFactory("delivery_delayed")
+    replan = prepare("delivery_delayed", factory)
+    assert replan.standing_order()["expected_delivery"] == s.delivery.isoformat()  # NOW + 24 h + 8 h
+    steps = [
+        ("search_manual", {"query": "tool wear end mill"}),
+        ("draft_booking", {"engineer_id": "E-01", "machine_id": "M-01", "start": "2026-10-15T14:00:00+00:00",
+                           "end": "2026-10-15T14:30:00+00:00", "task": "x", "purchase_order_id": "PO-0001"}),
+        ("find_free_engineers", {"skill": "cnc_tooling", "earliest_start": s.delivery.isoformat(),
+                                 "latest_end": s.failure_at.isoformat(), "duration_minutes": 30}),
+        ("draft_booking", {"engineer_id": "E-03", "machine_id": "M-01", "start": "2026-10-15T17:00:00+00:00",
+                           "end": "2026-10-15T17:30:00+00:00", "task": "Replace end mill", "purchase_order_id": "PO-0001"}),
+        plan(part_number="EM-1004", part_in_stock=False),
+    ]
+    llm = ScriptedLLM(steps)
+    agent = LocalAgent(llm=llm, factory=factory.client(), manual_sections=REAL_MANUAL, model="t")
+    result = runner.run(s.alert(), agent=agent, backend="local", replan=replan)
+    assert "delayed by the supplier from Thu 15 Oct 08:00 UTC" in llm.requests[0]["messages"][1]["content"]
+    too_early = [c for c in result.trace if c.tool == "draft_booking"][0]
+    assert "arrives" in too_early.result["error"]  # Priya's old slot is before the new delivery
+    assert result.booking_id == "BK-0002" and check("delivery_delayed", result, factory) == []

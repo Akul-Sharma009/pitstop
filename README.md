@@ -94,6 +94,14 @@ docker compose run --build --rm detector --scenario out_of_stock   # or in_stock
 docker compose run --build --rm -e CUTTING_MIN_PER_DAY=60 detector --scenario urgent   # failure ~16 h away: only the fast supplier is in time
 ```
 
+**Supplier delay** (demo control): after a plan is made, make the supplier deliver late. If the booked repair now starts before the part arrives, a pending booking is cancelled and the agent re-plans after the new delivery (or escalates if nothing fits before the failure); an approved booking is left to the manager.
+
+```bash
+curl -s -X POST localhost:8003/api/purchase-orders/PO-0001/delay -H 'Content-Type: application/json' -d '{"hours": 6}'
+```
+
+In `out_of_stock`, 6 hours moves the repair from Priya to Wei Ling; 12 hours leaves no slot before the failure, so the agent escalates.
+
 `--scenario` resets the mock factory first: engineer slots are set relative to that moment. `--build` matters: `docker compose up --build` doesn't rebuild the detector, which only runs on demand.
 
 Or send an alert by hand:

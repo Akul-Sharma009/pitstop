@@ -5,6 +5,8 @@ served together with a small API so the page needs one address and no CORS:
   GET  /api/{purchase-orders|bookings}/{id}  an order or booking, from the mock factory
   POST /api/{purchase-orders|bookings}/{id}/{approve|reject}   the manager's decision, to the mock factory;
        a reject with {"reason": "..."} also asks the agent for a new plan with that reason (replan)
+  POST /api/purchase-orders/{id}/delay       demo control: the supplier delays the order; a pending booking that
+       now starts before the part arrives is rejected and the agent replans (an approved one: the manager decides)
 
 This is the app side of the approval boundary: the agent and the MCP server have no route to approve or
 reject (docs/contracts.md). Run: uvicorn app.server:app --port 8003
@@ -22,6 +24,8 @@ import httpx
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+
+from agent.times import readable, utc
 
 STATIC = Path(__file__).with_name("static")
 PATHS = {"purchase-orders": "/supplier/purchase-orders", "bookings": "/calendar/bookings"}
@@ -67,6 +71,48 @@ def get_item(kind: str, item_id: str) -> JSONResponse:
     return relay(client("mocks").get(_path(kind, item_id)))
 
 
+@app.post("/api/purchase-orders/{po_id}/delay")
+def delay(po_id: str, body: dict[str, Any] | None = Body(None)) -> JSONResponse:
+    """The supplier delays an order (demo control). Re-check the latest plan's booking against the new delivery."""
+    response = client("mocks").post(f"{PATHS['purchase-orders']}/{po_id}/delay", params={"hours": (body or {}).get("hours")})
+    if response.status_code != 200:
+        return relay(response)
+    order = response.json()
+    result = latest_result()
+    booking = None
+    if result.get("purchase_order_id") == po_id and result.get("booking_id"):
+        found = client("mocks").get(_path("bookings", result["booking_id"]))
+        booking = found.json() if found.status_code == 200 else None
+    arrives = readable(order["expected_delivery"])
+    reply = {"order": order, "booking": booking, "action": "none",
+             "message": f"{po_id} now arrives {arrives}. The booked repair still starts after that, so the plan stands."}
+    if not booking or booking["status"] == "rejected" or utc(booking["start"]) >= utc(order["expected_delivery"]):
+        if not booking:
+            reply["message"] = f"{po_id} now arrives {arrives}. No booking depends on it."
+        return JSONResponse(reply)
+    if booking["status"] == "approved":
+        reply.update(action="manager_must_decide", message=(
+            f"{po_id} now arrives {arrives}, after the approved repair {booking['booking_id']} "
+            f"({readable(booking['start'])}). Reject the booking with a reason to get a new plan."))
+        return JSONResponse(reply)
+    rejected = client("mocks").post(f"{_path('bookings', booking['booking_id'])}/reject")
+    reply["booking"] = rejected.json() if rejected.status_code == 200 else booking
+    feedback = (f"The supplier delayed {po_id}: the part now arrives {arrives} instead of "
+                f"{readable(order.get('original_delivery'))}. Booking {booking['booking_id']} started before that, "
+                "so it was cancelled. Keep the order and book a repair after the new delivery, before the failure; "
+                "if nothing fits, escalate.")
+    threading.Thread(target=replan, args=(feedback,), daemon=True).start()
+    reply.update(action="replanning", message=(
+        f"{po_id} now arrives {arrives}, after the planned repair, so booking {booking['booking_id']} was cancelled. "
+        "The agent is making a new plan."))
+    return JSONResponse(reply)
+
+
+def latest_result() -> dict[str, Any]:
+    response = client("agent").get("/incidents/latest")
+    return (response.json().get("result") or {}) if response.status_code == 200 else {}
+
+
 @app.post("/api/{kind}/{item_id}/{action}")
 def decide(kind: str, item_id: str, action: str, body: dict[str, Any] | None = Body(None)) -> JSONResponse:
     if action not in ("approve", "reject"):
@@ -81,7 +127,7 @@ def decide(kind: str, item_id: str, action: str, body: dict[str, Any] | None = B
 
 def replan(reason: str) -> None:
     """Send the manager's reason and the previous plan's drafts, as the mocks have them now, to the agent."""
-    result = client("agent").get("/incidents/latest").json().get("result") or {}
+    result = latest_result()
 
     def current(kind: str, item_id: str | None) -> dict[str, Any] | None:
         if not item_id:

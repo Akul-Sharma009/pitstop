@@ -132,8 +132,10 @@ def replan_message(replan: Replan) -> str:
     lines = ["", "The manager reviewed your previous plan for this alert and asked for a new one.",
              f'Manager\'s feedback: "{replan.feedback.strip()}"', "Previous plan:"]
     if order := replan.purchase_order:
+        delayed = (f", delayed by the supplier from {readable(order['original_delivery'])}"
+                   if order.get("original_delivery") else "")
         lines.append(f"- Purchase order {order.get('po_id')} for {order.get('part_number')}, expected delivery "
-                     f"{readable(order.get('expected_delivery'))} ({order.get('expected_delivery')}): "
+                     f"{readable(order.get('expected_delivery'))} ({order.get('expected_delivery')}){delayed}: "
                      f"{status.get(order.get('status'), order.get('status'))}.")
     else:
         lines.append("- No purchase order.")
@@ -151,6 +153,8 @@ def replan_message(replan: Replan) -> str:
             f"- Search the manual for the repair steps, then call find_free_engineers with earliest_start "
             f"{order.get('expected_delivery')} (when {order.get('po_id')} arrives), and book with purchase_order_id "
             f"{order.get('po_id')}.",
+            f"- If no engineer is free between that delivery and predicted_failure_at, do not book: escalate, say why, "
+            f"and say that the manager could reject {order.get('po_id')} and order from a faster supplier.",
         ]
     elif order:
         lines += [

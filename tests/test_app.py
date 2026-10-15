@@ -84,3 +84,61 @@ def test_reject_with_a_reason_asks_the_agent_to_replan(monkeypatch):
     assert sent[0]["booking"]["status"] == "rejected"
     client.post(f"/api/purchase-orders/{order['po_id']}/reject")  # no reason: no replan
     assert len(sent) == 1
+
+
+def delay_setup(monkeypatch, booking_status=None, start="2026-10-15T14:00:00Z"):
+    """An order (delivery 15 Oct 08:00) and a booking at `start` (a free slot), the latest plan pointing at both; replans recorded."""
+    factory = FakeFactory()
+    order = factory.client().draft_purchase_order(PART, 1, "M-01", "wear")
+    booking = factory.client().draft_booking("E-01", "M-01", start, start.replace(":00:00Z", ":30:00Z"), "swap",
+                                             order["po_id"])
+    if booking_status:
+        factory.handle(httpx.Request("POST", f"http://mocks/calendar/bookings/{booking['booking_id']}/{booking_status}"))
+    sent = []
+
+    def agent(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/incidents/replan":
+            sent.append(httpx.Response(200, content=request.content).json())
+            return httpx.Response(200, json={"status": "awaiting_approval"})
+        return httpx.Response(200, json={"alert": {}, "result": {"purchase_order_id": order["po_id"],
+                                                                 "booking_id": booking["booking_id"]}})
+
+    monkeypatch.setattr(server, "clients", {
+        "agent": httpx.Client(base_url="http://agent", transport=httpx.MockTransport(agent)),
+        "mocks": httpx.Client(base_url="http://mocks", transport=httpx.MockTransport(factory.handle)),
+    })
+
+    class Now:  # run the background replan inline
+        def __init__(self, target, args, daemon):
+            self.run = lambda: target(*args)
+
+        def start(self):
+            self.run()
+
+    monkeypatch.setattr(server.threading, "Thread", Now)
+    return TestClient(server.app), factory, order, booking, sent
+
+
+def test_delay_cancels_a_pending_booking_and_replans(monkeypatch):
+    client, factory, order, booking, sent = delay_setup(monkeypatch)
+    reply = client.post(f"/api/purchase-orders/{order['po_id']}/delay", json={"hours": 7}).json()
+    assert reply["action"] == "replanning" and "now arrives Thu 15 Oct 15:00 UTC" in reply["message"]
+    assert factory.bookings[booking["booking_id"]]["status"] == "rejected"
+    assert len(sent) == 1 and "delayed PO-0001" in sent[0]["feedback"]
+    assert sent[0]["purchase_order"]["expected_delivery"] == "2026-10-15T15:00:00+00:00"
+    assert sent[0]["booking"]["status"] == "rejected"
+
+
+def test_delay_leaves_an_approved_booking_to_the_manager(monkeypatch):
+    client, factory, order, booking, sent = delay_setup(monkeypatch, booking_status="approve")
+    reply = client.post(f"/api/purchase-orders/{order['po_id']}/delay", json={"hours": 7}).json()
+    assert reply["action"] == "manager_must_decide" and "Reject the booking" in reply["message"]
+    assert factory.bookings[booking["booking_id"]]["status"] == "approved" and sent == []
+
+
+def test_delay_that_still_fits_changes_nothing(monkeypatch):
+    client, factory, order, booking, sent = delay_setup(monkeypatch)
+    reply = client.post(f"/api/purchase-orders/{order['po_id']}/delay", json={"hours": 2}).json()
+    assert reply["action"] == "none" and factory.bookings[booking["booking_id"]]["status"] == "pending_approval"
+    assert sent == []
+    assert client.post(f"/api/purchase-orders/{order['po_id']}/delay", json={"hours": -1}).status_code == 422
