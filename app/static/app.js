@@ -16,6 +16,14 @@ const STATUS = {
 let result = null;
 let isDemo = false;
 let seen = null; // what the last poll rendered, so a poll only redraws on a change
+let selectedMachine = null;
+let fleetDemo = false;
+let incidents = [];
+const draftStates = new Map();
+
+function machineHeader(id) {
+  $('machine-header').textContent = `PITSTOP / CNC MILL ${id || '—'}`;
+}
 
 const sample = {
   status: 'awaiting_approval', machine_id: 'M-01', diagnosis: 'Cutting tool worn close to its limit.',
@@ -57,6 +65,7 @@ function showFeedback(feedback) {
 
 function showAlert(alert) {
   if (!alert) {
+    setText('op-failure', null);
     $('alert-text').textContent = 'No alert yet. Run the detector replay to start.';
     return;
   }
@@ -70,12 +79,14 @@ function showAlert(alert) {
 
 function load(data, demo = false) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('AgentResult must be a JSON object');
+  for (const button of document.querySelectorAll('.buttons button')) disarm(button);
   result = data;
   isDemo = demo;
   for (const k of Object.keys(decided)) delete decided[k];
   $('op-update').hidden = true;
   setStatus(data.status);
   setText('machine', data.machine_id);
+  machineHeader(selectedMachine || data.machine_id);
   setText('part', data.part_number ? [data.part_number, data.part_name].filter(Boolean).join(' · ') : 'Not selected');
   setText('planned', data.downtime?.planned_min != null ? `${data.downtime.planned_min} min` : '—');
   setText('diagnosis', data.diagnosis);
@@ -129,6 +140,7 @@ function load(data, demo = false) {
 
 function clearPlan(status) {
   result = null;
+  for (const button of document.querySelectorAll('.buttons button')) disarm(button);
   setStatus(status);
   setText('diagnosis', status === 'planning' ? 'The agent is reading the manual, checking stock and finding an engineer…' : 'The plan appears here when the agent has finished.');
   for (const id of ['machine', 'part', 'planned', 'stock', 'delivery', 'engineer', 'window', 'op-planned', 'op-saved', 'op-money', 'op-status', 'op-machine', 'op-engineer', 'op-window']) setText(id, null);
@@ -151,6 +163,8 @@ const API = { po: 'purchase-orders', booking: 'bookings' };
 const decided = {}; // po / booking → status in the mock factory
 
 function showDecision(kind, item) {
+  const draftId = kind === 'po' ? result?.purchase_order_id : result?.booking_id;
+  if (draftId) draftStates.set(`${kind}:${draftId}`, item.status);
   if (kind === 'po' && item.po_id) {
     // The order as the supplier has it: what the manager is paying for.
     setText('po-id', [item.po_id, `${item.quantity} × ${item.part_number}`, item.supplier,
@@ -212,11 +226,16 @@ function disarm(button) {
 async function refreshItem(kind, id) {
   try {
     const response = await fetch(`/api/${API[kind]}/${encodeURIComponent(id)}`);
-    if (response.ok) showDecision(kind, await response.json());
+    if (response.ok) {
+      const item = await response.json();
+      draftStates.set(`${kind}:${id}`, item.status);
+      if (!isDemo && id === (kind === 'po' ? result?.purchase_order_id : result?.booking_id)) showDecision(kind, item);
+    }
   } catch { /* the next poll tries again */ }
 }
 
 async function decision(kind, action) {
+  const activePlan = result;
   const id = kind === 'po' ? result?.purchase_order_id : result?.booking_id;
   if (!id || isDemo) return;
   const label = kind === 'po' ? 'purchase order' : 'booking';
@@ -235,6 +254,8 @@ async function decision(kind, action) {
     });
     const body = await response.json();
     if (!response.ok) throw new Error(body.detail || `HTTP ${response.status}`);
+    draftStates.set(`${kind}:${id}`, body.status);
+    if (result !== activePlan || isDemo) return;
     showDecision(kind, body);
     $(`${kind}-reason`).value = '';
     $('message').textContent = reason
@@ -243,18 +264,22 @@ async function decision(kind, action) {
         ? `${label[0].toUpperCase()}${label.slice(1)} ${id} rejected. No reason given, so the agent won't make a new plan.`
         : `${label[0].toUpperCase()}${label.slice(1)} ${id}: ${body.status}.`;
   } catch (e) {
+    if (result !== activePlan || isDemo) return;
     $('message').textContent = `Request failed: ${e.message}`;
     refreshItem(kind, id);
   }
 }
 
 async function poll() {
+  if (isDemo) return;
+  const machine = selectedMachine;
   try {
-    const response = await fetch('/api/latest');
+    const response = await fetch(machine ? `/api/incidents/${encodeURIComponent(machine)}` : '/api/latest');
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const latest = await response.json();
+    if (machine !== selectedMachine || isDemo) return;
     $('live').textContent = 'Live';
-    const key = JSON.stringify([latest.received_at, latest.result?.status ?? null]);
+    const key = JSON.stringify(latest);
     if (key === seen) {
       // Decisions made in another window show up here too.
       if (result && !isDemo) {
@@ -267,12 +292,133 @@ async function poll() {
     seen = key;
     showAlert(latest.alert);
     showFeedback(latest.feedback);
+    machineHeader(machine || latest.alert?.machine_id || latest.result?.machine_id);
     if (latest.result) load(latest.result);
-    else if (latest.alert) clearPlan('planning');
+    else clearPlan(latest.alert ? 'planning' : null);
   } catch {
+    if (machine !== selectedMachine || isDemo) return;
     $('live').textContent = 'Agent service not reachable';
   }
 }
+
+function renderFleet() {
+  const focused = document.activeElement?.dataset.machine;
+  $('fleet-rows').replaceChildren();
+  for (const incident of incidents) {
+    const alert = incident.alert || {};
+    const plan = incident.result || {};
+    const id = alert.machine_id || plan.machine_id;
+    if (!id) continue;
+    const drafts = [['po', plan.purchase_order_id], ['booking', plan.booking_id]].filter(([, draft]) => draft);
+    const states = drafts.map(([kind, draft]) => draftStates.get(`${kind}:${draft}`) ||
+      (['approved', 'rejected'].includes(plan.status) ? plan.status : 'pending_approval'));
+    const pending = states.filter((status) => status === 'pending_approval').length;
+    let status = plan.status || 'planning';
+    if (status === 'awaiting_approval' && states.length && !pending) status = states.includes('rejected') ? 'rejected' : 'approved';
+    const row = document.createElement('tr');
+    row.classList.toggle('selected', id === selectedMachine);
+    const cells = Array.from({ length: 7 }, () => document.createElement('td'));
+    const button = Object.assign(document.createElement('button'), { textContent: id, className: 'machine-select' });
+    button.dataset.machine = id;
+    button.setAttribute('aria-label', `Review machine ${id}`);
+    button.addEventListener('click', () => selectMachine(incident));
+    cells[0].append(button);
+    cells[1].textContent = value(alert.failure_type).replace(/_/g, ' ');
+    if (alert.simulated) cells[1].append(Object.assign(document.createElement('span'), { className: 'simulated-tag', textContent: 'Simulated alert' }));
+    cells[2].textContent = date(alert.predicted_failure_at);
+    const pill = Object.assign(document.createElement('span'), { className: 'pill', textContent: STATUS[status] || status });
+    pill.dataset.status = status;
+    cells[3].append(pill);
+    cells[4].textContent = [plan.part_number, plan.part_name, plan.purchase_order_id || (plan.part_in_stock ? 'From stock' : 'No purchase order')].filter(Boolean).join(' · ');
+    cells[5].textContent = [plan.engineer_name || 'No engineer booked', span(plan.booking_start, plan.booking_end)].join(' · ');
+    cells[6].textContent = String(pending);
+    row.append(...cells);
+    row.addEventListener('click', (event) => { if (!event.target.closest('button')) selectMachine(incident); });
+    $('fleet-rows').append(row);
+    if (focused === id) button.focus();
+  }
+}
+
+function selectMachine(incident) {
+  selectedMachine = incident.alert?.machine_id || incident.result?.machine_id;
+  isDemo = fleetDemo;
+  seen = null;
+  clearPlan(incident.alert ? 'planning' : null);
+  showAlert(incident.alert);
+  showFeedback(incident.feedback);
+  machineHeader(selectedMachine);
+  if (incident.result) load(incident.result, fleetDemo);
+  document.querySelector('[data-page="approval"]').click();
+  poll();
+}
+
+async function pollFleet() {
+  if (fleetDemo) return;
+  try {
+    const response = await fetch('/api/incidents');
+    if (fleetDemo) return;
+    if (response.status === 404) {
+      $('fleet-message').textContent = 'Fleet view needs the fleet backend';
+      return;
+    }
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const body = await response.json();
+    if (fleetDemo) return;
+    if (!Array.isArray(body.incidents)) throw new Error('Invalid fleet response');
+    incidents = body.incidents;
+    // The incident result contains draft IDs; the factory owns their current approval states.
+    await Promise.all(incidents.flatMap(({ result: plan }) =>
+      [['po', plan?.purchase_order_id], ['booking', plan?.booking_id]].filter(([, id]) => id).map(([kind, id]) => refreshItem(kind, id))));
+    if (fleetDemo) return;
+    $('fleet-message').textContent = incidents.length ? 'Live fleet' : 'No fleet alerts yet.';
+    renderFleet();
+  } catch {
+    if (!fleetDemo) $('fleet-message').textContent = 'Fleet service not reachable. Retrying…';
+  }
+}
+
+$('load-fleet').addEventListener('click', () => {
+  fleetDemo = true;
+  draftStates.clear();
+  incidents = [1, 2, 3, 4].map((n) => {
+    const id = `M-0${n}`;
+    const escalated = n === 4;
+    return {
+      alert: { machine_id: id, failure_type: escalated ? 'coolant_pump' : 'tool_wear', simulated: escalated,
+        predicted_failure_at: `2026-10-${escalated ? '17' : '16'}T18:00:00Z` },
+      result: { ...sample, machine_id: id, status: escalated ? 'escalated' : 'awaiting_approval',
+        part_number: escalated ? 'CP-2001' : sample.part_number, part_name: escalated ? 'Coolant pump' : sample.part_name,
+        part_in_stock: n === 1, purchase_order_id: n === 2 || n === 3 ? `PO-DEMO-${n}` : null,
+        expected_delivery: n === 2 || n === 3 ? sample.expected_delivery : null,
+        booking_id: escalated ? null : `BK-DEMO-${n}`, engineer_name: escalated ? null : n === 3 ? 'Wei Ling' : 'Priya Nair',
+        booking_start: escalated ? null : `2026-10-15T${n === 1 ? '07' : n === 2 ? '14' : '15'}:00:00Z`,
+        booking_end: escalated ? null : `2026-10-15T${n === 1 ? '07' : n === 2 ? '14' : '15'}:30:00Z`,
+        diagnosis: escalated ? 'Simulated coolant-pump failure: replacement cannot arrive before predicted failure.' : sample.diagnosis,
+        escalation_reason: escalated ? 'Pump lead time is 72 hours; failure is predicted in 40 hours.' : null,
+        repair_steps: escalated ? ['Manager to arrange an urgent coolant-pump repair.'] : sample.repair_steps,
+        operator_summary: escalated ? 'Simulated coolant-pump alert escalated to the manager. No repair is booked.' : sample.operator_summary,
+        downtime: escalated ? null : sample.downtime },
+      received_at: null, feedback: null, previous: null,
+    };
+  });
+  $('fleet-message').textContent = 'Demo fleet loaded. Approval buttons are disabled for demo machines.';
+  renderFleet();
+});
+
+$('follow-latest').addEventListener('click', () => {
+  selectedMachine = null;
+  fleetDemo = false;
+  isDemo = false;
+  seen = null;
+  draftStates.clear();
+  clearPlan(null);
+  showAlert(null);
+  showFeedback(null);
+  machineHeader(null);
+  document.querySelector('[data-page="approval"]').click();
+  poll();
+  pollFleet();
+});
 
 $('load-sample').addEventListener('click', () => load(sample, true));
 $('load-json').addEventListener('click', () => {
@@ -285,6 +431,12 @@ for (const button of document.querySelectorAll('.nav-btn')) {
     document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('active', b === button));
     $('approval-page').hidden = page !== 'approval';
     $('operator-page').hidden = page !== 'operator';
+    $('fleet-page').hidden = page !== 'fleet';
+    if (page === 'fleet') {
+      $('page-title').textContent = 'Fleet';
+      $('page-subtitle').textContent = 'Monitor every machine and review its maintenance plan.';
+      return;
+    }
     $('page-title').textContent = page === 'approval' ? 'Maintenance approval' : 'Operator summary';
     $('page-subtitle').textContent = page === 'approval'
       ? 'Review the AI maintenance plan before any action is authorized.'
@@ -294,3 +446,5 @@ for (const button of document.querySelectorAll('.nav-btn')) {
 
 poll();
 setInterval(poll, POLL_MS);
+pollFleet();
+setInterval(pollFleet, POLL_MS);
