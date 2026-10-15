@@ -110,7 +110,7 @@ Next up (handed off from the cloud session, Thu 15 Oct midday), in this order:
 3. ~~Delivery delay~~: done (PR #11).
 4. ~~Hidden instructions in tool data~~: done (PR #12, see the status table).
 5. ~~Hosting prep~~: done (PR #13). Still to do: the "model offline" banner in `app/static/` once `fleet-screens` merges (from `/api/status`).
-6. **Gemma 4 option:** in `deploy/vllm/serve.sh` and `docs/setup-guide.md` (see Gemma below).
+6. ~~Gemma 4 option~~: done (PR #14): `VLLM_PRESET=gemma4` in `serve.sh` (vLLM recipe: `vllm/vllm-openai-rocm`, gemma4 parsers, vLLM's Gemma 4 tool template), side by side with Qwen (`VLLM_PORT=8081 VLLM_GPU_MEM=0.45`); setup guide "Optional: try Gemma 4 beside Qwen". Untested until AMD.
 7. Fri: AMD (credits or pay by evening), eval on AMD for both models, operator chat via the Evolus widget. Sat PM: submission materials (Claude drafts title, descriptions, tags, cover image, slides, video script).
 8. **New alert for a machine with an open plan** (branch `realert`, ~2–3 h, Fri night or Sat before the freeze; cut first). One feature covering two cases, decided in the agent service before the agent runs, reusing delivery delay's re-check of a plan against new facts:
    - *Repeat alert*, failure time about the same: keep the open plan, don't ask the manager again. (Not just a test: today a second plan can't reuse the pending order, because the agent only learns of it from the mocks' 409.)

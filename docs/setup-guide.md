@@ -149,6 +149,29 @@ docker compose run --rm --no-deps agent python -m scripts.eval_agent --repeat 3 
 ```
 ✅ Ideally `9/9 passed`. Whatever it says, paste `eval.txt` to Claude: the failures tell us what to fix in the prompt or model settings. Print it again with `cat eval.txt`.
 
+### Optional: try Gemma 4 beside Qwen (about 30 min, mostly waiting)
+
+Gemma 4 26B-A4B is a mixture-of-experts model like ours (about 4B active parameters), and teams building with Gemma on AMD can also enter Google DeepMind's prize. We switch only if it does as well as Qwen on the full eval (decision in `CLAUDE.md`). Both models fit on one MI300X, so run them side by side and keep Qwen serving.
+
+**[GPU]** Restart Qwen with half the GPU memory, then start Gemma on port 8081 (`google/gemma-4-26B-A4B-it`, Apache 2.0, no token needed; the first run downloads the `vllm/vllm-openai-rocm` image and about 50 GB of weights):
+```bash
+set -a && . ./.env && set +a
+VLLM_GPU_MEM=0.45 ./deploy/vllm/serve.sh
+VLLM_PRESET=gemma4 VLLM_PORT=8081 VLLM_GPU_MEM=0.45 ./deploy/vllm/serve.sh
+docker logs -f pitstop-vllm-gemma4          # wait for "Application startup complete"
+```
+
+**[GPU]** Same checks as step 4, pointed at Gemma:
+```bash
+G="-e VLLM_BASE_URL=http://172.17.0.1:8081/v1 -e VLLM_MODEL=google/gemma-4-26B-A4B-it"
+docker compose run --rm --no-deps $G agent python scripts/check_vllm.py --thinking-probe
+docker compose run --rm --no-deps $G agent python -m scripts.eval_agent --repeat 2 2>&1 | tee eval-gemma.txt
+docker compose run --rm --no-deps $G agent python -m scripts.eval_agent --fleet 2>&1 | tee -a eval-gemma.txt
+```
+✅ The probe shows a tool call with thinking `none` in the "no switch" row. Paste `eval-gemma.txt` to Claude next to the Qwen results.
+
+If Gemma matches Qwen: in `.env` set `VLLM_MODEL=google/gemma-4-26B-A4B-it` and `VLLM_BASE_URL=http://172.17.0.1:8081/v1` (or restart Gemma alone on 8080 with the full GPU), run `docker compose --profile public up -d`, and add the model in Evolus (Your models → the connection → Add models). If tool calls fail or the template errors, it's not worth a detour: stop it with `docker rm -f pitstop-vllm-gemma4` and restart Qwen with the full GPU (`./deploy/vllm/serve.sh`).
+
 ## Step 5 — Put the MCP server and the model online over HTTPS (10 min)
 
 **[GPU]**
