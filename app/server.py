@@ -11,12 +11,16 @@ served together with a small API so the page needs one address and no CORS:
 
 This is the app side of the approval boundary: the agent and the MCP server have no route to approve or
 reject (docs/contracts.md). Run: uvicorn app.server:app --port 8003
-Env: AGENT_URL (default http://localhost:8002), MOCKS_URL (default http://localhost:8000).
+Env: AGENT_URL (default http://localhost:8002), MOCKS_URL (default http://localhost:8000),
+SCREENS_PASSWORD (set it whenever the screens are reachable from the internet: the browser then asks for
+SCREENS_USER, default "manager", and this password; the screens can approve orders).
 """
 
 from __future__ import annotations
 
+import base64
 import os
+import secrets
 import threading
 from pathlib import Path
 from typing import Any
@@ -54,6 +58,16 @@ def _path(kind: str, item_id: str) -> str:
     if kind not in PATHS:
         raise HTTPException(404, "unknown kind")
     return f"{PATHS[kind]}/{item_id}"
+
+
+@app.get("/api/status")
+def status() -> dict[str, Any]:
+    """For the screens' banner: is the agent service up, and does the AI model answer (GPU instance on)?"""
+    try:
+        health = client("agent").get("/health", timeout=8).json()
+    except (httpx.HTTPError, ValueError):
+        return {"agent": "offline", "model": "unknown"}
+    return {"agent": "online", "model": health.get("model", "unknown"), "backend": health.get("backend")}
 
 
 @app.get("/api/latest")
@@ -165,6 +179,20 @@ def replan(reason: str, machine_id: str | None = None) -> None:
             "purchase_order": current("purchase-orders", result.get("purchase_order_id")),
             "booking": current("bookings", result.get("booking_id"))}
     client("agent").post("/incidents/replan", json=body, timeout=600)
+
+
+@app.middleware("http")
+async def password(request, call_next):
+    """HTTP basic auth on everything when SCREENS_PASSWORD is set (the browser shows its own login box)."""
+    expected = os.environ.get("SCREENS_PASSWORD")
+    if expected:
+        user = os.environ.get("SCREENS_USER", "manager")
+        token = base64.b64encode(f"{user}:{expected}".encode()).decode()
+        given = request.headers.get("authorization", "")
+        if not secrets.compare_digest(given.encode(), f"Basic {token}".encode()):
+            return JSONResponse({"detail": "login required"}, status_code=401,
+                                headers={"WWW-Authenticate": 'Basic realm="Pitstop", charset="UTF-8"'})
+    return await call_next(request)
 
 
 @app.middleware("http")

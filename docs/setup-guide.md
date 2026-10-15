@@ -110,6 +110,7 @@ VLLM_PORT=8080
 VLLM_BASE_URL=http://172.17.0.1:8080/v1
 MCP_API_TOKEN=<the value printed above>
 PUBLIC_HOST=<IP>.sslip.io
+SCREENS_PASSWORD=<a password for the screens>
 ```
 
 `172.17.0.1` is the machine's own address as seen from its Docker containers, so this one URL works for every container. `<IP>.sslip.io` is a free hostname that points at your IP, so you get HTTPS without buying a domain.
@@ -165,6 +166,17 @@ curl -s https://$H/v1/models -H "Authorization: Bearer $VLLM_KEY"               
 ```
 
 If the requests hang or fail with an SSL error, ports 80/443 aren't reachable. Check the instance's firewall in the AMD Developer Cloud console and `ufw` (step 3). Then run `docker compose logs caddy | tail -30` and paste the output.
+
+**[Mac]** Open `https://<IP>.sslip.io` in the browser: it asks for a login (`manager` and your `SCREENS_PASSWORD`), then shows the screens.
+
+### The live URL for the submission
+
+The submission needs an application URL that keeps working while the judges look, also after Sunday, and the GPU instance is switched off or destroyed between sessions (step 7), which changes its IP. Two ways:
+
+- **Recommended: a small always-on VM in front of the GPU.** Any 1 vCPU / 1–2 GB Linux VM with a fixed IP (a few dollars a month). Run steps 3 and 5 there without the model (`serve.sh` stays on the GPU), with `PUBLIC_HOST=<VM-IP>.sslip.io`, `MODEL_UPSTREAM=<GPU-IP>:8080` and `VLLM_BASE_URL=http://<GPU-IP>:8080/v1`. The screens, the MCP server and the model all live at `https://<VM-IP>.sslip.io`, so Evolus and the submission never change. When the GPU instance is recreated, edit those two lines and run `docker compose --profile public up -d`. When it's off, the screens' `/api/status` says the model is offline and a plan comes back with "The AI model is offline …". On the GPU, allow port 8080 from the VM only: `ufw allow from <VM-IP> to any port 8080 proto tcp`.
+- **Simplest: the GPU instance itself** (steps 3–5 as written). Fine for the demo and the video, but the URL dies whenever the instance is destroyed.
+
+Either way, set `SCREENS_PASSWORD` and give the judges the login in the submission text: the screens can approve orders.
 
 ## Step 6 — Evolus (30–60 min)
 
