@@ -1,11 +1,12 @@
-"""Replay AI4I readings as one machine's live feed and send an Alert when the tool nears its wear limit.
+"""Replay AI4I readings as live machine feeds and alert when tools near their wear limits.
 
 The feed for M-01 is a rising-tool-wear sequence we build from held-out AI4I rows (healthy readings, one per
 wear step); AI4I itself has no time series. The wear limit (detector/model.py) uses the model's score averaged
 over the last few readings, since one odd reading can swing it. Calendar time comes from a stated assumption:
-CUTTING_MIN_PER_DAY minutes of cutting per day.
+CUTTING_MIN_PER_DAY minutes of cutting per day. Fleet mode partitions held-out rows among three
+tool-wear feeds, staggered by three readings, then sends an explicitly simulated coolant-pump alert.
 
-Usage: python -m detector.replay [--scenario out_of_stock|in_stock|no_engineer] [--dry-run] [--interval S]
+Usage: python -m detector.replay [--fleet] [--scenario out_of_stock|in_stock|no_engineer|fleet] [--dry-run] [--interval S]
 Env: ALERT_URL (agent's /incidents), MOCKS_URL (for --scenario), CUTTING_MIN_PER_DAY (20),
      ALERT_HORIZON_MIN (45), WEAR_STEP_MIN (8), WEAR_LIMIT_WINDOW (3), DETECTOR_THRESHOLD (0.5),
      AI4I_CSV (data/ai4i2020.csv).
@@ -19,6 +20,7 @@ import os
 import sys
 import time
 from collections.abc import Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -64,7 +66,7 @@ def watch(model: Any, rows: list[dict[str, Any]], horizon: float, threshold: flo
 
 
 def make_alert(model: Any, recent: list[dict[str, Any]], remaining: float, now: datetime, cutting_min_per_day: float,
-               horizon: float) -> dict[str, Any]:
+               horizon: float, machine_id: str = MACHINE) -> dict[str, Any]:
     """The Alert of docs/contracts.md for the latest reading.
 
     risk: the model's highest score, averaged over the recent readings, within the horizon (uncalibrated).
@@ -72,7 +74,7 @@ def make_alert(model: Any, recent: list[dict[str, Any]], remaining: float, now: 
     row = recent[-1]
     detected = now.replace(second=0, microsecond=0)
     return {
-        "machine_id": MACHINE,
+        "machine_id": machine_id,
         "failure_type": "tool_wear",
         "risk": round(peak_score(model, recent, horizon), 2),
         "tool_wear_min": round(row["Tool wear [min]"]),
@@ -83,8 +85,88 @@ def make_alert(model: Any, recent: list[dict[str, Any]], remaining: float, now: 
     }
 
 
+def fleet_feeds(test_rows: list[dict[str, Any]], step: float) -> dict[str, list[dict[str, Any]]]:
+    """Partition held-out rows before sequencing: machines never share readings."""
+    return {f"M-{k + 1:02d}": sequence(test_rows[k::3], step) for k in range(3)}
+
+
+def send_alert(alert: dict[str, Any]) -> None:
+    url = os.environ.get("ALERT_URL", "http://localhost:8002/incidents")
+    print(f"Sending {alert['machine_id']} to {url} (the agent plans the repair; this can take a minute)...")
+    result = httpx.post(url, json=alert, timeout=600).raise_for_status().json()
+    print(f"{alert['machine_id']} result: {json.dumps(result, indent=2)}")
+
+
+def replay_fleet(trained: Any, per_day: float, horizon: float, threshold: float, step: float,
+                 window: int, interval: float, dry_run: bool) -> int:
+    feeds = fleet_feeds(trained.test_rows, step)
+    watchers = {machine: watch(trained.model, rows, horizon, threshold, window)
+                for machine, rows in feeds.items()}
+    starts = {machine: k * 3 for k, machine in enumerate(feeds)}
+    limits: dict[str, float] = {}
+    alerted: set[str] = set()
+    pending: list[tuple[str, Future]] = []
+    tick = 0
+    # Four workers let every alert start sending even while earlier agents are planning.
+    with ThreadPoolExecutor(max_workers=4) as sender:
+        def emit(alert: dict[str, Any]) -> None:
+            print(f"\nALERT: {json.dumps(alert, indent=2)}")
+            if not dry_run:
+                pending.append((alert["machine_id"], sender.submit(send_alert, alert)))
+
+        while watchers:
+            for machine in list(watchers):
+                if tick < starts[machine]:
+                    continue
+                try:
+                    recent, remaining = next(watchers[machine])
+                except StopIteration:
+                    print(f"{machine}: the replay ended without an alert.")
+                    del watchers[machine]
+                    continue
+                row = recent[-1]
+                if remaining is not None:
+                    limits[machine] = row["Tool wear [min]"] + remaining
+                    left = f"about {remaining:.0f} cutting min to the wear limit"
+                elif machine in limits:
+                    left = f"about {max(limits[machine] - row['Tool wear [min]'], 0):.0f} cutting min (previous estimate)"
+                else:
+                    left = "no estimate yet"
+                print(f"{machine} tool wear {row['Tool wear [min]']:>5.0f} min | torque {row['Torque [Nm]']:>4.1f} Nm | {left}")
+                if remaining is not None and remaining <= horizon:
+                    emit(make_alert(trained.model, recent, remaining, datetime.now(timezone.utc),
+                                    per_day, horizon, machine_id=machine))
+                    alerted.add(machine)
+                    del watchers[machine]
+            tick += 1
+            if watchers:
+                time.sleep(interval)
+
+        now = datetime.now(timezone.utc)
+        emit({
+            "machine_id": "M-04",
+            "failure_type": "coolant_pump",
+            "risk": 0.8,
+            "simulated": True,
+            "tool_wear_min": None,
+            "remaining_cutting_min": None,
+            "detected_at": now.isoformat(),
+            "predicted_failure_at": (now + timedelta(hours=40)).isoformat(),
+            "readings": {},
+        })
+        failed = len(alerted) != 3
+        for machine, future in pending:
+            try:
+                future.result()
+            except Exception as exc:
+                print(f"{machine}: alert sending failed: {exc}", file=sys.stderr)
+                failed = True
+    return int(failed)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--fleet", action="store_true", help="replay four machines sharing one factory")
     parser.add_argument("--scenario", help="reset the mock factory to this demo scenario first")
     parser.add_argument("--dry-run", action="store_true", help="print the alert instead of sending it")
     parser.add_argument("--interval", type=float, default=float(os.environ.get("REPLAY_INTERVAL_S", 0.5)),
@@ -99,12 +181,15 @@ def main(argv: list[str] | None = None) -> int:
     (normal, false_alarms), (missed, caught) = trained.confusion
     print(f"Failure model (AI4I 2020, synthetic): on {len(trained.test_rows)} held-out rows caught {caught} of "
           f"{caught + missed} tool-wear failures, {false_alarms} false alarms.")
-    print(f"Replaying {MACHINE} from held-out AI4I readings; assumption: {per_day:g} cutting minutes per day.\n")
+    print(f"Replaying {'M-01/M-02/M-03/M-04' if args.fleet else MACHINE} from held-out AI4I readings; assumption: {per_day:g} cutting minutes per day.\n")
 
     if args.scenario and not args.dry_run:
         mocks = env("MOCKS_URL", "http://localhost:8000")
         httpx.post(f"{mocks}/admin/reset", params={"scenario": args.scenario}, timeout=10).raise_for_status()
         print(f"Mock factory reset to scenario {args.scenario}.")
+
+    if args.fleet:
+        return replay_fleet(trained, per_day, horizon, threshold, step, window, args.interval, args.dry_run)
 
     recent: list[dict[str, Any]] = []
     remaining: float | None = None
