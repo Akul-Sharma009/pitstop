@@ -31,6 +31,8 @@ detector ──Alert──▶ app ──Alert──▶ agent service ──tools
 }
 ```
 
+`simulated` (optional, default `false`; fleet mode, in progress): `true` for an alert the detector did not produce. In fleet mode M-04's coolant-pump alert is simulated, since the failure model only flags tool wear; the screens label it.
+
 `predicted_failure_at` is calendar time derived from `remaining_cutting_min` with the detector's stated assumption (`CUTTING_MIN_PER_DAY`, default 20). `remaining_cutting_min` is the gap between the current tool wear and the wear at which the failure model starts flagging failure for these readings. Both use the model's score averaged over the last few readings. `risk` is the highest such score within the alert horizon (`ALERT_HORIZON_MIN`), so it is at least the alert threshold whenever an alert is sent: uncalibrated, not a probability. See `detector/model.py`.
 
 ## 2. AgentResult (agent service → app)
@@ -141,5 +143,7 @@ The manager approval screen and the operator summary (`app/static`), served with
 | Method | Path | Does |
 |---|---|---|
 | GET | `/api/latest` | `GET {AGENT_URL}/incidents/latest`; `{"alert": null, "result": null}` before the first alert |
+| GET | `/api/incidents` | fleet mode, in progress: `{"incidents": [ … ]}`, one entry per machine sorted by machine ID; each entry has the shape of `/api/latest` |
+| GET | `/api/incidents/{machine_id}` | fleet mode, in progress: that machine's latest alert and plan (shape of `/api/latest`); 404 if the machine has no alert |
 | GET | `/api/purchase-orders/{id}`, `/api/bookings/{id}` | the order or booking from the mocks (its approval status) |
 | POST | `/api/purchase-orders/{id}/approve\|reject`, `/api/bookings/{id}/approve\|reject` | the manager's decision, to the mocks' **app only** endpoints. A reject with body `{"reason": "..."}` also starts a replan in the background (`POST {AGENT_URL}/incidents/replan`) |
