@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -9,7 +10,7 @@ from fastapi.testclient import TestClient
 from agent import api, manual, runner
 from agent.evolus_client import EvolusAgent, extract_json
 from agent.local_agent import LocalAgent
-from devtools.fakes import MANUAL, PART, FakeFactory, ScriptedLLM, sample_alert, thin_path_script
+from devtools.fakes import FAILURE, MANUAL, PART, FakeFactory, ScriptedLLM, sample_alert, thin_path_script
 
 
 make_alert = sample_alert
@@ -50,8 +51,15 @@ def test_booking_after_failure_is_flagged():
     late = {"start": "2026-10-16T12:00:00+00:00", "end": "2026-10-16T12:30:00+00:00"}
     script[5] = ("draft_booking", {**script[5][1], **late})
     result, _ = run_local(script, scenario="no_engineer")
-    assert result.booking_end.isoformat() == late["end"]  # taken from the calendar, not the model
-    assert "Repair is booked after the predicted failure." in result.warnings
+    # The local agent refuses it, so nothing is booked and the plan escalates.
+    assert result.booking_id is None and result.status == "escalated"
+    assert "after the predicted failure" in result.trace[-1].result["error"]
+    # Evolus has no such refusal: there the guard flags a late booking.
+    from agent import guard
+    late_plan = result.model_copy(update={"status": "awaiting_approval", "booking_id": "BK-0001",
+                                          "booking_start": datetime.fromisoformat(late["start"]),
+                                          "booking_end": datetime.fromisoformat(late["end"])})
+    assert "Repair is booked after the predicted failure." in guard.check(late_plan, sample_alert())
 
 
 def test_model_that_never_submits_becomes_failed_result():
@@ -342,3 +350,13 @@ def test_guard_flags_two_orders_and_a_booking_without_the_part():
     none = AgentResult(status="awaiting_approval", machine_id="M-01", part_number=PART, booking_id="BK-0001",
                        trace=[stock, booking])
     assert any("neither in stock nor on order" in w for w in guard.check(none, make_alert()))
+
+
+def test_a_search_or_booking_past_the_predicted_failure_is_refused():
+    agent = LocalAgent(llm=ScriptedLLM([]), factory=FakeFactory().client(), manual_sections=MANUAL, model="test")
+    agent.failure_at = FAILURE
+    later = (FAILURE + timedelta(days=1)).isoformat()
+    refused = agent._after_failure("find_free_engineers", {"latest_end": later})
+    assert refused and FAILURE.isoformat() in refused and "escalate" in refused
+    assert agent._after_failure("draft_booking", {"end": later})
+    assert agent._after_failure("find_free_engineers", {"latest_end": FAILURE.isoformat()}) is None

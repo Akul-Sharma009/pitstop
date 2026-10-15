@@ -1,9 +1,11 @@
 # Fleet mode: the teammate's two tasks
 
-Fleet mode runs four machines that share one factory: the same engineers and the same parts store. Claude builds the backend (mocks, agent service, `/api/incidents`) on branch `fleet-mode`. These two tasks are the detector and screen parts, built against the interfaces in [`contracts.md`](contracts.md). Work on your own branch from an up-to-date `master`; Akul reviews and merges. Claude doesn't edit `detector/` or `app/static/` while these branches are open.
+Fleet mode runs four machines that share one factory: the same engineers and the same parts store. Claude builds the backend (mocks, agent service, `/api/incidents`) on branch `fleet-mode`. These two tasks are the detector and screen parts, built against the interfaces in [`contracts.md`](contracts.md). Work on your own branch from an up-to-date `master`, push it and open a PR; Akul reviews, runs it on his Mac and merges. Claude doesn't edit `detector/` or `app/static/` while these branches are open.
+
+On your own computer (no keys needed: the AI4I data downloads itself on the first detector run):
 
 ```bash
-cd ~/pitstop
+git clone https://github.com/Akul-Sharma009/pitstop.git && cd pitstop   # once; afterwards just cd into your clone
 git checkout master && git pull origin master
 git checkout -b fleet-replay        # Task 2: git checkout master && git checkout -b fleet-screens
 ```
