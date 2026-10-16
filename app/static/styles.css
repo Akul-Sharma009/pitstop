@@ -35,3 +35,4 @@ button:focus-visible{outline:2px solid #f6d98a;outline-offset:3px}
 .offline{background:#45242c;color:#ffc4cc;border:1px solid #7a3a47;border-radius:10px;padding:12px 16px;font-size:13px;line-height:1.6;margin:0 0 16px}
 #demo-controls .actions{margin-top:12px;flex-wrap:wrap}
 .hours{width:80px;padding:8px}
+.scenario{background:#0c1420;border:1px solid #36465a;color:#e7edf5;border-radius:8px;padding:9px;font:inherit;max-width:100%}

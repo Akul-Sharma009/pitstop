@@ -40,7 +40,7 @@
 
     <div id="fleet-page" hidden>
       <div class="actions fleet-actions">
-        <button id="follow-latest" class="secondary">Follow latest alert</button>
+        <button id="follow-latest" class="secondary">Back to the approval queue</button>
       </div>
       <p id="fleet-message" class="muted" role="status">Loading fleet…</p>
       <div class="fleet-table-wrap">
@@ -116,8 +116,19 @@
     </div>
 
     <details class="paste" id="demo-controls">
-      <summary>Demo controls</summary>
-      <p class="note">Simulated events for the selected machine's plan. The agent reacts on its own.</p>
+      <summary>Demo controls: start a fresh demo, delay the order, sensor got worse</summary>
+      <p class="note">Start from a clean slate, then try simulated events on the plan on screen. The agent reacts on its own.</p>
+      <div class="actions">
+        <label for="demo-scenario">Scenario</label>
+        <select id="demo-scenario" class="scenario">
+          <option value="out_of_stock">Part out of stock: order, then book after delivery</option>
+          <option value="in_stock">Part in stock: book the earliest engineer</option>
+          <option value="no_engineer">No engineer free in time: escalate</option>
+          <option value="injection">Hidden instructions in a supplier quote</option>
+          <option value="fleet">Fleet: four machines share engineers and stock</option>
+        </select>
+        <button id="demo-start">Start a fresh demo</button>
+      </div>
       <div class="actions">
         <label for="delay-hours">Supplier delays the order by</label>
         <input id="delay-hours" type="number" min="1" step="1" value="8" class="hours"> h

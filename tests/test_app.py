@@ -194,3 +194,54 @@ def test_delay_rechecks_the_plan_of_the_orders_machine(monkeypatch):
     reply = TestClient(server.app).post(f"/api/purchase-orders/{order['po_id']}/delay", json={"hours": 7}).json()
     assert reply["action"] == "replanning" and factory.bookings[booking["booking_id"]]["status"] == "rejected"
     assert len(sent) == 1 and sent[0]["machine_id"] == "M-01" and sent[0]["booking"]["booking_id"] == booking["booking_id"]
+
+
+def demo_setup(monkeypatch, planning=False):
+    """The app with a fake agent (records deletes and alerts) and the fake factory; background work inline."""
+    factory = FakeFactory()
+    calls = {"deleted": 0, "alerts": []}
+
+    def agent(request: httpx.Request) -> httpx.Response:
+        if request.method == "DELETE":
+            calls["deleted"] += 1
+            return httpx.Response(200, json={"cleared": 1})
+        if request.method == "POST":
+            calls["alerts"].append(httpx.Response(200, content=request.content).json())
+            return httpx.Response(200, json={"status": "awaiting_approval"})
+        return httpx.Response(200, json={"incidents": [{"alert": {"machine_id": "M-01"}, "result": None if planning else {}}]})
+
+    monkeypatch.setattr(server, "clients", {
+        "agent": httpx.Client(base_url="http://agent", transport=httpx.MockTransport(agent)),
+        "mocks": httpx.Client(base_url="http://mocks", transport=httpx.MockTransport(factory.handle)),
+    })
+
+    class Now:
+        def __init__(self, target, args, daemon):
+            self.run = lambda: target(*args)
+
+        def start(self):
+            self.run()
+
+    monkeypatch.setattr(server.threading, "Thread", Now)
+    return TestClient(server.app), factory, calls
+
+
+def test_a_fresh_demo_resets_the_factory_forgets_plans_and_alerts(monkeypatch):
+    client, factory, calls = demo_setup(monkeypatch)
+    factory.client().draft_purchase_order(PART, 1, "M-01", "an old judge's order")
+    reply = client.post("/api/demo/start", json={"scenario": "in_stock"}).json()
+    assert reply["machines"] == ["M-01"] and factory.scenario == "in_stock" and factory.orders == {}
+    assert calls["deleted"] == 1 and len(calls["alerts"]) == 1
+    alert = calls["alerts"][0]
+    assert alert["simulated"] is True and alert["failure_type"] == "tool_wear" and alert["remaining_cutting_min"] == 40
+    fleet = client.post("/api/demo/start", json={"scenario": "fleet"}).json()
+    assert fleet["machines"] == ["M-01", "M-02", "M-03", "M-04"]
+    assert calls["alerts"][-1]["failure_type"] == "coolant_pump"
+    assert client.post("/api/demo/start", json={"scenario": "nope"}).status_code == 422
+
+
+def test_no_fresh_demo_while_the_agent_is_planning(monkeypatch):
+    client, _, calls = demo_setup(monkeypatch, planning=True)
+    response = client.post("/api/demo/start", json={})
+    assert response.status_code == 409 and "still planning" in response.json()["detail"]
+    assert calls["deleted"] == 0 and calls["alerts"] == []

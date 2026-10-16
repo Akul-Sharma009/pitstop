@@ -8,6 +8,8 @@ served together with a small API so the page needs one address and no CORS:
        a reject with {"reason": "..."} also asks the agent for a new plan with that reason (replan)
   POST /api/purchase-orders/{id}/delay       demo control: the supplier delays the order; a pending booking that
        now starts before the part arrives is rejected and the agent replans (an approved one: the manager decides)
+  POST /api/demo/start                      demo control: {"scenario": ...} resets the mock factory to a demo scenario,
+       forgets every plan and sends fresh (simulated) alerts, so each judge can start from a clean slate
   POST /api/incidents/{machine_id}/worse     demo control: a simulated new reading moves the machine's predicted
        failure earlier; a pending booking that now ends after it is rejected and the agent replans for the new
        alert (an approved one: the manager decides); otherwise the agent keeps the plan if it still fits
@@ -198,6 +200,63 @@ def worse(machine_id: str, body: dict[str, Any] | None = Body(None)) -> JSONResp
             f"{machine_id} is now predicted to fail {readable(failure)}. The alert went to the agent: a plan that "
             "still fits is kept."))
     return JSONResponse(reply)
+
+
+# Demo scenarios a judge can start (mocks/seed.json), and the machines that alert in each.
+DEMO_SCENARIOS = {
+    "out_of_stock": "Part out of stock: order it, book an engineer after delivery",
+    "in_stock": "Part in stock: book the earliest engineer",
+    "no_engineer": "No engineer free in time: order the part, escalate",
+    "injection": "A supplier quote hides instructions to the agent: ignore them",
+    "fleet": "Fleet: four machines share engineers and one spare cutter",
+}
+READINGS = {"air_temperature_k": 298.9, "process_temperature_k": 309.1, "rotational_speed_rpm": 1420.0, "torque_nm": 46.3}
+
+
+def demo_alerts(scenario: str, now: datetime) -> list[dict[str, Any]]:
+    """Alerts like the detector replay's (docs/contracts.md), marked simulated: they come from a button, not
+    the sensor replay. Tool wear: the replay's typical alert (≈40 cutting minutes left); the fleet's values
+    are the real replay's (M-01–M-03) plus its simulated coolant pump (M-04)."""
+    detected = now.replace(second=0, microsecond=0)
+    per_day = float(os.environ.get("CUTTING_MIN_PER_DAY", 20))
+
+    def wear(machine: str, worn: float, left: float) -> dict[str, Any]:
+        return {"machine_id": machine, "failure_type": "tool_wear", "risk": 0.9, "simulated": True,
+                "tool_wear_min": worn, "remaining_cutting_min": left, "detected_at": detected.isoformat(),
+                "predicted_failure_at": (detected + timedelta(days=left / per_day)).isoformat(), "readings": READINGS}
+
+    if scenario != "fleet":
+        return [wear("M-01", 160, 40)]
+    pump = {"machine_id": "M-04", "failure_type": "coolant_pump", "risk": 0.8, "simulated": True,
+            "tool_wear_min": None, "remaining_cutting_min": None, "detected_at": detected.isoformat(),
+            "predicted_failure_at": (detected + timedelta(hours=40)).isoformat(), "readings": {}}
+    return [wear("M-01", 158, 42), wear("M-02", 158, 42), wear("M-03", 157, 43), pump]
+
+
+@app.post("/api/demo/start")
+def start_demo(body: dict[str, Any] | None = Body(None)) -> JSONResponse:
+    """A clean slate (demo control): reset the mock factory to a scenario, forget every plan, send fresh alerts."""
+    scenario = (body or {}).get("scenario") or "out_of_stock"
+    if scenario not in DEMO_SCENARIOS:
+        raise HTTPException(422, f"unknown scenario; use one of {', '.join(DEMO_SCENARIOS)}")
+    try:
+        planning = [i["alert"]["machine_id"] for i in client("agent").get("/incidents").json()["incidents"]
+                    if i.get("result") is None]
+    except (httpx.HTTPError, ValueError, KeyError):
+        raise HTTPException(503, "the agent service is not reachable")
+    if planning:
+        raise HTTPException(409, f"the agent is still planning for {', '.join(planning)}: wait for it, then start again")
+    reset = client("mocks").post("/admin/reset", params={"scenario": scenario})
+    if reset.status_code != 200:
+        return relay(reset)
+    client("agent").delete("/incidents")
+    alerts = demo_alerts(scenario, clock())
+    for alert in alerts:  # the agent takes a minute or two each; the page follows the plans
+        threading.Thread(target=send_alert, args=(alert,), daemon=True).start()
+    machines = [a["machine_id"] for a in alerts]
+    return JSONResponse({"scenario": scenario, "machines": machines, "message": (
+        f"Fresh demo: {DEMO_SCENARIOS[scenario]}. The factory was reset and {', '.join(machines)} sent an alert; "
+        "the agent is planning (a minute or two" + (" per machine, one at a time" if len(machines) > 1 else "") + ").")})
 
 
 def clock() -> datetime:
