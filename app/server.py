@@ -199,7 +199,7 @@ def delay(po_id: str, body: dict[str, Any] | None = Body(None)) -> JSONResponse:
 
 @app.post("/api/incidents/{machine_id}/worse")
 def worse(machine_id: str, body: dict[str, Any] | None = Body(None)) -> JSONResponse:
-    """The sensor got worse (demo control): send a simulated alert for the machine with the failure predicted
+    """Failure comes sooner (demo control): a worse sensor reading: send a simulated alert for the machine with the failure predicted
     {"failure_in_h": N} hours from now (default: an hour before its booked repair starts)."""
     response = client("agent").get(f"/incidents/{machine_id}")
     if response.status_code != 200:
@@ -352,7 +352,7 @@ def decide(kind: str, item_id: str, action: str, body: dict[str, Any] | None = B
 
 def replan(reason: str, machine_id: str | None = None, alert: dict[str, Any] | None = None) -> None:
     """Send the manager's reason and the previous plan's drafts, as the mocks have them now, to the agent
-    (and a newer alert for the machine, if the sensor got worse)."""
+    (and a newer alert for the machine, after a worse sensor reading)."""
     result, machine_id = plan_of(machine_id)
 
     def current(kind: str, item_id: str | None) -> dict[str, Any] | None:
