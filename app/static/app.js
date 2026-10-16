@@ -154,7 +154,7 @@ function tickPlanning() {
   const seconds = Math.max(0, Math.floor((Date.now() - new Date(planningSince)) / 1000));
   const elapsed = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
   $('status').textContent = `Agent is planning… ${elapsed}`;
-  setText('diagnosis', `The agent is reading the manual, checking stock and finding an engineer (${elapsed} so far; usually 1–3 minutes)…`);
+  setText('diagnosis', 'The agent is working on a plan (usually 1–3 minutes). What it has done so far:');
 }
 setInterval(tickPlanning, 1000);
 
