@@ -33,6 +33,21 @@ button:focus-visible{outline:2px solid #f6d98a;outline-offset:3px}
 .pill[data-status="rejected"]{background:#45242c;color:#ffc4cc;border-color:#7a3a47}
 @media(max-width:650px){.nav{flex-wrap:wrap;gap:5px}.nav-btn{padding:12px 10px;font-size:12px}.actions{flex-wrap:wrap}.fleet-table{min-width:850px}.fleet-table-wrap{-webkit-overflow-scrolling:touch}.detail{flex-wrap:wrap}.detail b{overflow-wrap:anywhere}header .pill{display:inline-block;margin-top:8px}}
 .offline{background:#45242c;color:#ffc4cc;border:1px solid #7a3a47;border-radius:10px;padding:12px 16px;font-size:13px;line-height:1.6;margin:0 0 16px}
-#demo-controls .actions{margin-top:12px;flex-wrap:wrap}
 .hours{width:80px;padding:8px}
-.scenario{background:#0c1420;border:1px solid #36465a;color:#e7edf5;border-radius:8px;padding:9px;font:inherit;max-width:100%}
+
+/* The left panel stays in place while the page scrolls; the demo controls sit at its bottom. */
+aside{position:sticky;top:0;height:100vh;overflow-y:auto}
+.nav{margin-top:36px}
+.side-demo{margin-top:auto;padding:18px 12px 0;border-top:1px solid #293548;display:flex;flex-direction:column;gap:9px}
+.side-title{font-size:10px;letter-spacing:1.7px;color:#8794a7;font-weight:700;text-transform:uppercase}
+.side-demo label{font-size:12px;color:#b3c2d2}
+.side-note{font-size:11px;line-height:1.5;color:#8794a7;margin:0}
+#demo-message:empty{display:none}
+#demo-message{color:#cbd5e1}
+.side-row{display:flex;align-items:center;gap:7px}
+.side-row .hours{width:58px;padding:8px}
+.side-row button{flex:1;padding:9px 10px}
+.side-wide{width:100%;padding:10px}
+.side-fresh{display:flex;flex-direction:column;gap:8px;border-top:1px solid #293548;padding-top:12px;margin-top:4px}
+.scenario{background:#0c1420;border:1px solid #36465a;color:#e7edf5;border-radius:8px;padding:9px;font:inherit;font-size:13px;width:100%}
+@media(max-width:650px){aside{position:static;height:auto;overflow:visible}.side-demo{margin-top:14px}}
