@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from agent.models import Alert
+from agent.times import readable
 
 PART = "EM-1004"
 NOW = datetime.fromisoformat("2026-10-14T08:00:00+00:00")
@@ -28,6 +29,17 @@ CHEAP, FAST = "ToolCo", "SpeedTool"
 DELAYED = ("The supplier delayed PO-0001 by {hours} h. Booking BK-0001 started before the new delivery, so it was "
            "cancelled. Keep the order and book a repair after the new delivery, before the failure; if nothing fits, "
            "escalate.")
+# The reason the app gives the agent when a worse reading cancels a booking (app/server.py, worse): the booking
+# at +30 h would end after the new failure.
+WORSE = ("A new sensor reading moved the predicted failure to {failure}, before booking BK-0001 ({start}) would "
+         "finish, so it was cancelled. Keep PO-0001 and book a repair after it arrives, before the new failure; if "
+         "nothing fits, escalate.")
+
+
+def worse(failure_in_h: float) -> str:
+    return WORSE.format(failure=readable(NOW + timedelta(hours=failure_in_h)), start=readable(NOW + timedelta(hours=30)))
+
+
 PARTS = {
     "EM-1004": ("Carbide end mill 10 mm 4-flute", [(CHEAP, 89.0, 24), (FAST, 145.0, 6)]),
     "EM-1006": ("Carbide end mill 6 mm 2-flute (finishing)", [(CHEAP, 64.0, 24)]),
@@ -148,6 +160,14 @@ SCENARIOS = {s.name: s for s in [
     Scenario("delivery_delayed_too_late", "Replan: the part is delayed past the failure, so escalate; never book.",
              slots={"E-01": [7, 30], "E-03": [33]}, order=True, search=None, search_required=False,
              previous=Previous(DELAYED.format(hours=30), "approved", ("E-01", 30), delay_h=30)),
+    # The sensor got worse after the plan was made (a new alert, failure earlier); the app cancelled the booking
+    # that would end after the new failure.
+    Scenario("sensor_worse", "Replan: the failure moved to +29 h, before Priya's slot: book Wei Ling at +26 h, keep the order.",
+             failure_in_h=29, tool_wear=(187, 23), slots={"E-01": [7, 30], "E-03": [26]}, order=True,
+             booking=("E-03", 26), previous=Previous(worse(29), "pending_approval", ("E-01", 30))),
+    Scenario("sensor_worse_too_late", "Replan: the failure moved to +20 h, before the ordered part arrives: escalate.",
+             failure_in_h=20, tool_wear=(196, 16), slots={"E-01": [7, 30], "E-03": [26]}, order=True, search=None,
+             search_required=False, previous=Previous(worse(20), "pending_approval", ("E-01", 30))),
 ]}
 CORE = ["out_of_stock", "in_stock", "no_engineer"]
 
