@@ -417,8 +417,6 @@ async function pollStatus() {
 }
 
 // Demo controls: a supplier delay or a worse sensor reading for the plan on screen (app/server.py).
-// Shown only on the ?demo address (the video), so judges see the plain console.
-$('demo-controls').hidden = !new URLSearchParams(location.search).has('demo');
 async function demoEvent(path, body) {
   $('demo-message').textContent = 'Sending…';
   try {
