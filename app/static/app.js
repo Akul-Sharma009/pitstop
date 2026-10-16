@@ -119,7 +119,8 @@ function load(data, demo = false) {
   setText('op-machine', data.machine_id);
   setText('op-engineer', data.engineer_name);
   setText('op-window', span(data.booking_start, data.booking_end));
-  $('message').textContent = demo ? 'Demo data loaded. Approval buttons are disabled.' : '';
+  $('message').textContent = demo ? 'Demo data loaded. Approval buttons are disabled.' : queueNote;
+  queueNote = '';
 }
 
 function clearPlan(status) {
@@ -256,12 +257,12 @@ async function decision(kind, action) {
 
 async function poll() {
   if (isDemo) return;
-  const machine = selectedMachine;
+  const machine = target();
   try {
     const response = await fetch(machine ? `/api/incidents/${encodeURIComponent(machine)}` : '/api/latest');
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const latest = await response.json();
-    if (machine !== selectedMachine || isDemo) return;
+    if (machine !== target() || isDemo) return;
     $('live').textContent = 'Live';
     const key = JSON.stringify(latest);
     if (key === seen) {
@@ -280,15 +281,50 @@ async function poll() {
     if (latest.result) load(latest.result);
     else clearPlan(latest.alert ? 'planning' : null);
   } catch {
-    if (machine !== selectedMachine || isDemo) return;
+    if (machine !== target() || isDemo) return;
     $('live').textContent = 'Agent service not reachable';
   }
+}
+
+// The approval queue: unless the manager picked a machine on the Fleet page, the approval page shows the first
+// machine (by ID) that still needs them: still planning, or a draft waiting for approval. When everything on it
+// is decided it moves on by itself; when nothing is left it stays on the last machine it showed.
+let queueMachine = null;
+let queueNote = ''; // shown when the next machine's plan loads
+const target = () => selectedMachine || queueMachine;
+
+function needsManager(incident) {
+  const plan = incident.result;
+  if (!plan) return true; // still planning
+  return [['po', plan.purchase_order_id], ['booking', plan.booking_id]]
+    .some(([kind, id]) => id && (draftStates.get(`${kind}:${id}`) || 'pending_approval') === 'pending_approval');
+}
+
+function followQueue() {
+  if (selectedMachine || fleetDemo) return;
+  const known = (id) => incidents.some((i) => (i.alert?.machine_id || i.result?.machine_id) === id);
+  if (queueMachine && !known(queueMachine)) { // its plans were cleared (a reset): start the queue again
+    queueMachine = null;
+    seen = null;
+  }
+  const next = incidents.find(needsManager);
+  const id = next ? (next.alert?.machine_id || next.result?.machine_id) : queueMachine;
+  if (!id || id === queueMachine) return;
+  const done = queueMachine;
+  queueMachine = id;
+  seen = null;
+  clearPlan('planning');
+  showAlert(next.alert);
+  showFeedback(next.feedback);
+  machineHeader(id);
+  queueNote = done ? `Everything on ${done} is decided. Now ${id}.` : '';
+  poll();
 }
 
 let fleetShown = null; // what the table shows, so a poll only redraws it on a change (clicks don't hit a replaced row)
 
 function renderFleet() {
-  const shown = JSON.stringify([incidents, [...draftStates], selectedMachine]);
+  const shown = JSON.stringify([incidents, [...draftStates], target()]);
   if (shown === fleetShown) return;
   fleetShown = shown;
   const focused = document.activeElement?.dataset.machine;
@@ -305,7 +341,7 @@ function renderFleet() {
     let status = plan.status || 'planning';
     if (status === 'awaiting_approval' && states.length && !pending) status = states.includes('rejected') ? 'rejected' : 'approved';
     const row = document.createElement('tr');
-    row.classList.toggle('selected', id === selectedMachine);
+    row.classList.toggle('selected', id === target());
     const cells = Array.from({ length: 7 }, () => document.createElement('td'));
     const button = Object.assign(document.createElement('button'), { textContent: id, className: 'machine-select' });
     button.dataset.machine = id;
@@ -361,6 +397,7 @@ async function pollFleet() {
     if (fleetDemo) return;
     $('fleet-message').textContent = incidents.length ? 'Live fleet' : 'No fleet alerts yet.';
     renderFleet();
+    followQueue();
   } catch {
     if (!fleetDemo) $('fleet-message').textContent = 'Fleet service not reachable. Retrying…';
   }
@@ -368,6 +405,7 @@ async function pollFleet() {
 
 $('follow-latest').addEventListener('click', () => {
   selectedMachine = null;
+  queueMachine = null;
   fleetDemo = false;
   isDemo = false;
   seen = null;
@@ -437,6 +475,7 @@ $('demo-start').addEventListener('click', async () => {
     if (!response.ok) throw new Error(reply.detail || `HTTP ${response.status}`);
     // Follow the new alerts: the fleet table for the fleet, the approval page otherwise.
     selectedMachine = null;
+    queueMachine = null;
     seen = null;
     draftStates.clear();
     clearPlan(null);
