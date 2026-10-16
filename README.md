@@ -42,7 +42,7 @@ The same alert leads to a different, correct plan in each: the agent reasons abo
 
 ## The agent in Evolus
 
-The agent runs in an **Evolus** workspace (agent chat on our model), using:
+The agent runs in the **Evolus** workspace **Machine Whisperers** (agent chat on our model), using:
 
 - **Agent "Pitstop maintenance planner"** on Gemma-4-31B-IT, with **"Pitstop backup"** on Qwen3.8-27B. Instructions: `python scripts/evolus_text.py prompt`.
 - **Knowledge library:** the machine manual (`manual/cnc_mill_m01.md`, 7 failure types and similar part numbers, so retrieval has to pick the right one).
@@ -122,7 +122,7 @@ For the public server: set `PUBLIC_HOST` (e.g. `<server-ip>.sslip.io`), `SCREENS
 ## Team
 
 - **Akul Sharma** ([@Akul-Sharma009](https://github.com/Akul-Sharma009)): agent, Evolus integration, MCP server, mock factory, deployment.
-- **Pradeep** ([@pradeepshenram](https://github.com/pradeepshenram)): the failure model, the machine manual, the screens and the supplier data.
+- **Pradeep Shenbagaram** ([@pradeepshenram](https://github.com/pradeepshenram)): the failure model, the machine manual, the screens and the supplier data.
 
 Built with [Claude Code](https://claude.com/claude-code).
 
