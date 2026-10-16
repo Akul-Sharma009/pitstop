@@ -6,7 +6,7 @@ model and tune the prompt before the mocks and Evolus are ready.
 Usage: python -m scripts.eval_agent [--scenario NAME]... [--core] [--fleet] [--repeat N] [-v] [--short-manual]
 Runs every scenario in devtools/scenarios.py: the three demo scenarios plus stress scenarios (look-alike parts,
 other skills, parts that arrive too late, no part in the manual, ...) and replans after a manager's rejection
-or a supplier delay; --core runs only the demo three; --fleet runs fleet mode instead: four machines alert at
+or a supplier delay or a worse sensor reading; --core runs only the demo three; --fleet runs fleet mode instead: four machines alert at
 once and four agents plan in parallel on one shared factory (devtools.scenarios.FLEET).
 Uses the real machine manual (manual/), as in the demo; --short-manual uses the 3-section test manual.
 Reads VLLM_BASE_URL, VLLM_API_KEY, VLLM_MODEL. With -v, prints the model's messages and reasoning between
@@ -129,7 +129,9 @@ def check_search_window(scenario: Scenario, result: AgentResult, ordered: dict |
     # The order the agent actually placed (e.g. the fast supplier when no offer is in time): search from its delivery.
     expected_start = (utc(ordered["expected_delivery"]) if isinstance(ordered, dict) else scenario.delivery) if ordered else NOW
     problems = []
-    if utc(args.get("earliest_start")) != expected_start:
+    # Nothing ordered and escalated: checking a quoted delivery after the failure was a fair way to find out.
+    any_start = not ordered and result.status == "escalated" and not scenario.search_required
+    if not any_start and utc(args.get("earliest_start")) != expected_start:
         problems.append(f"engineer search starts {args.get('earliest_start')}, expected {expected_start.isoformat()}")
     if utc(args.get("latest_end")) != scenario.failure_at:
         problems.append(f"engineer search ends {args.get('latest_end')}, expected {scenario.failure_at.isoformat()}")

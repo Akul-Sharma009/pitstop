@@ -8,6 +8,9 @@ served together with a small API so the page needs one address and no CORS:
        a reject with {"reason": "..."} also asks the agent for a new plan with that reason (replan)
   POST /api/purchase-orders/{id}/delay       demo control: the supplier delays the order; a pending booking that
        now starts before the part arrives is rejected and the agent replans (an approved one: the manager decides)
+  POST /api/incidents/{machine_id}/worse     demo control: a simulated new reading moves the machine's predicted
+       failure earlier; a pending booking that now ends after it is rejected and the agent replans for the new
+       alert (an approved one: the manager decides); otherwise the agent keeps the plan if it still fits
 
 This is the app side of the approval boundary: the agent and the MCP server have no route to approve or
 reject (docs/contracts.md). Run: uvicorn app.server:app --port 8003
@@ -22,6 +25,7 @@ import base64
 import os
 import secrets
 import threading
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -142,6 +146,79 @@ def delay(po_id: str, body: dict[str, Any] | None = Body(None)) -> JSONResponse:
     return JSONResponse(reply)
 
 
+@app.post("/api/incidents/{machine_id}/worse")
+def worse(machine_id: str, body: dict[str, Any] | None = Body(None)) -> JSONResponse:
+    """The sensor got worse (demo control): send a simulated alert for the machine with the failure predicted
+    {"failure_in_h": N} hours from now (default: an hour before its booked repair starts)."""
+    response = client("agent").get(f"/incidents/{machine_id}")
+    if response.status_code != 200:
+        return relay(response)
+    incident = response.json()
+    result = incident.get("result")
+    if not result:
+        raise HTTPException(409, "the agent is still planning")
+    now = clock()
+    hours = (body or {}).get("failure_in_h")
+    if hours is None:
+        start = utc(result.get("booking_start"))
+        if not start:
+            raise HTTPException(422, "no booked repair to come before: give failure_in_h")
+        hours = max((start - now).total_seconds() / 3600 - 1, 1)
+    if float(hours) <= 0:
+        raise HTTPException(422, "failure_in_h must be positive")
+    alert = worse_alert(incident["alert"], now, now + timedelta(hours=float(hours)))
+    failure = utc(alert["predicted_failure_at"])
+    booking = None
+    if result.get("booking_id"):
+        found = client("mocks").get(_path("bookings", result["booking_id"]))
+        booking = found.json() if found.status_code == 200 else None
+    reply = {"alert": alert, "booking": booking}
+    if booking and booking["status"] == "pending_approval" and utc(booking["end"]) > failure:
+        rejected = client("mocks").post(f"{_path('bookings', booking['booking_id'])}/reject")
+        reply["booking"] = rejected.json() if rejected.status_code == 200 else booking
+        order = result.get("purchase_order_id")
+        feedback = (f"A new sensor reading moved the predicted failure to {readable(failure)}, before booking "
+                    f"{booking['booking_id']} ({readable(booking['start'])}) would finish, so it was cancelled. "
+                    + (f"Keep {order} and book a repair after it arrives, before the new failure; "
+                       if order else "Book an earlier repair, before the new failure; ")
+                    + "if nothing fits, escalate.")
+        threading.Thread(target=replan, args=(feedback, machine_id, alert), daemon=True).start()
+        reply.update(action="replanning", message=(
+            f"{machine_id} is now predicted to fail {readable(failure)}, before booking {booking['booking_id']} "
+            "would finish, so it was cancelled. The agent is making a new plan."))
+        return JSONResponse(reply)
+    # Like any alert: the agent keeps an open plan (with a warning if an approved repair is now too late).
+    threading.Thread(target=send_alert, args=(alert,), daemon=True).start()
+    if booking and booking["status"] == "approved" and utc(booking["end"]) > failure:
+        reply.update(action="manager_must_decide", message=(
+            f"{machine_id} is now predicted to fail {readable(failure)}, before the approved repair "
+            f"{booking['booking_id']} ({readable(booking['start'])}). Reject the booking with a reason to get a new plan."))
+    else:
+        reply.update(action="alert_sent", message=(
+            f"{machine_id} is now predicted to fail {readable(failure)}. The alert went to the agent: a plan that "
+            "still fits is kept."))
+    return JSONResponse(reply)
+
+
+def clock() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def send_alert(alert: dict[str, Any]) -> None:
+    client("agent").post("/incidents", json=alert, timeout=600)
+
+
+def worse_alert(alert: dict[str, Any], now: datetime, failure: datetime) -> dict[str, Any]:
+    """The machine's alert, detected now with the failure at `failure`; tool wear moved to match. Simulated."""
+    new = {**alert, "detected_at": now.isoformat(), "predicted_failure_at": failure.isoformat(), "simulated": True}
+    wear, left = alert.get("tool_wear_min"), alert.get("remaining_cutting_min")
+    before = (utc(alert["predicted_failure_at"]) - utc(alert["detected_at"])).total_seconds()
+    if wear is not None and left is not None and before > 0:
+        remaining = left * (failure - now).total_seconds() / before  # same cutting minutes per day
+        new.update(remaining_cutting_min=round(remaining, 1), tool_wear_min=round(wear + left - remaining, 1))
+    return new
+
+
 def plan_of(machine_id: str | None) -> tuple[dict[str, Any], str | None]:
     """(that machine's latest plan, the machine); without a machine, or if it has no alert: the latest alert's."""
     if machine_id:
@@ -165,8 +242,9 @@ def decide(kind: str, item_id: str, action: str, body: dict[str, Any] | None = B
     return relay(response)
 
 
-def replan(reason: str, machine_id: str | None = None) -> None:
-    """Send the manager's reason and the previous plan's drafts, as the mocks have them now, to the agent."""
+def replan(reason: str, machine_id: str | None = None, alert: dict[str, Any] | None = None) -> None:
+    """Send the manager's reason and the previous plan's drafts, as the mocks have them now, to the agent
+    (and a newer alert for the machine, if the sensor got worse)."""
     result, machine_id = plan_of(machine_id)
 
     def current(kind: str, item_id: str | None) -> dict[str, Any] | None:
@@ -177,7 +255,7 @@ def replan(reason: str, machine_id: str | None = None) -> None:
 
     body = {"feedback": reason, "machine_id": machine_id,
             "purchase_order": current("purchase-orders", result.get("purchase_order_id")),
-            "booking": current("bookings", result.get("booking_id"))}
+            "booking": current("bookings", result.get("booking_id")), **({"alert": alert} if alert else {})}
     client("agent").post("/incidents/replan", json=body, timeout=600)
 
 

@@ -28,6 +28,8 @@
       <span id="status" class="pill">Waiting for an alert</span>
     </header>
 
+    <p id="offline" class="offline" role="status" hidden></p>
+
     <section class="source alert-bar">
       <div>
         <small class="muted">Latest alert</small>
@@ -113,6 +115,21 @@
         <p class="note">Downtime savings are estimates from stated assumptions, not measured outcomes.</p>
       </article>
     </div>
+
+    <details class="paste" id="demo-controls">
+      <summary>Demo controls</summary>
+      <p class="note">Simulated events for the selected machine's plan. The agent reacts on its own.</p>
+      <div class="actions">
+        <label for="delay-hours">Supplier delays the order by</label>
+        <input id="delay-hours" type="number" min="1" step="1" value="8" class="hours"> h
+        <button id="delay-order" class="secondary">Delay the order</button>
+      </div>
+      <div class="actions">
+        <button id="sensor-worse" class="secondary">Sensor got worse</button>
+        <span class="muted">Failure predicted an hour before the booked repair (simulated reading).</span>
+      </div>
+      <p id="demo-message" class="note" role="status"></p>
+    </details>
 
     <details class="paste">
       <summary>Load a result by hand</summary>

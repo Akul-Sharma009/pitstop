@@ -45,6 +45,7 @@ class Replan(BaseModel):
     machine_id: str | None = None  # whose plan (fleet mode); None: the most recent alert's machine
     purchase_order: dict[str, Any] | None = None  # the previous plan's order as the mocks have it now
     booking: dict[str, Any] | None = None  # the previous plan's booking as the mocks have it now
+    alert: Alert | None = None  # a newer alert for the machine (the sensor got worse); None: the stored alert
 
     def standing_order(self) -> dict[str, Any] | None:
         """The previous order if the manager did not reject it: the new plan reuses it."""

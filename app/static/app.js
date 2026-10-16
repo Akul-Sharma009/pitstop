@@ -450,6 +450,50 @@ for (const button of document.querySelectorAll('.nav-btn')) {
   });
 }
 
+// Banner when the agent service or the AI model is offline (the GPU server is switched off between demos).
+async function pollStatus() {
+  let text = '';
+  try {
+    const response = await fetch('/api/status');
+    const status = await response.json();
+    if (status.agent === 'offline') text = 'The agent service is offline: no new plans can be made right now.';
+    else if (status.model === 'offline') text = 'The AI model is offline: its GPU server is switched off between demos to save credits. Plans already made are shown; new alerts get a plan when it is back.';
+  } catch {
+    text = '';
+  }
+  $('offline').textContent = text;
+  $('offline').hidden = !text;
+}
+
+// Demo controls: a supplier delay or a worse sensor reading for the plan on screen (app/server.py).
+async function demoEvent(path, body) {
+  $('demo-message').textContent = 'Sending…';
+  try {
+    const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const reply = await response.json();
+    $('demo-message').textContent = response.ok ? reply.message : `Not sent: ${reply.detail || `HTTP ${response.status}`}`;
+  } catch (e) {
+    $('demo-message').textContent = `Not sent: ${e.message}`;
+  }
+}
+
+$('delay-order').addEventListener('click', () => {
+  if (!result || isDemo || !result.purchase_order_id) {
+    $('demo-message').textContent = 'The plan on screen has no live purchase order to delay.';
+    return;
+  }
+  demoEvent(`/api/purchase-orders/${encodeURIComponent(result.purchase_order_id)}/delay`, { hours: Number($('delay-hours').value) || 8 });
+});
+$('sensor-worse').addEventListener('click', () => {
+  if (!result || isDemo || !result.booking_id) {
+    $('demo-message').textContent = 'The plan on screen has no live booking to come before.';
+    return;
+  }
+  demoEvent(`/api/incidents/${encodeURIComponent(result.machine_id)}/worse`, {});
+});
+
+pollStatus();
+setInterval(pollStatus, 10000);
 poll();
 setInterval(poll, POLL_MS);
 pollFleet();
