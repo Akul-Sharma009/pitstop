@@ -76,7 +76,11 @@ def check(result: AgentResult, alert: Alert) -> list[str]:
     if not result.trace:
         warnings.append("No tool trace available: part number and drafts could not be verified.")
     else:
-        if result.part_number and not _seen_in_trace(
+        # A replan that reuses the previous plan's order needs no new stock check: that order names the part.
+        standing = any(c.tool == "draft_purchase_order" and c.arguments.get("from_previous_plan")
+                       and isinstance(c.result, dict) and c.result.get("part_number") == result.part_number
+                       for c in result.trace)
+        if result.part_number and not standing and not _seen_in_trace(
             result.part_number, result, {"search_manual", "check_inventory", "get_supplier_quote"}
         ):
             warnings.append(f"Part number {result.part_number} was not found in the manual or the inventory.")
