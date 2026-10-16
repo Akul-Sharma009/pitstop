@@ -16,7 +16,28 @@
       <button class="nav-btn" data-page="operator">▤ &nbsp; Operator summary</button>
       <button class="nav-btn" data-page="fleet">▦ &nbsp; Fleet</button>
     </div>
-    <div class="aside-foot">CNC mills M-01 to M-04 · Demo console<br>Fictional factory data</div>
+    <section class="side-demo" id="demo-controls" aria-label="Demo controls">
+      <div class="side-title">Demo controls</div>
+      <p class="side-note">Simulated events for the plan on screen. The agent reacts on its own.</p>
+      <label for="delay-hours">Supplier delays the order</label>
+      <div class="side-row">
+        <input id="delay-hours" type="number" min="1" step="1" value="6" class="hours"><span class="muted">h</span>
+        <button id="delay-order" class="secondary">Delay order</button>
+      </div>
+      <button id="sensor-worse" class="secondary side-wide" title="Failure predicted an hour before the booked repair (simulated reading)">Sensor got worse</button>
+      <p id="demo-message" class="side-note" role="status"></p>
+      <div class="side-fresh">
+        <label for="demo-scenario">Scenario</label>
+        <select id="demo-scenario" class="scenario">
+          <option value="out_of_stock">Part out of stock</option>
+          <option value="in_stock">Part in stock</option>
+          <option value="no_engineer">No engineer free in time</option>
+          <option value="injection">Hidden instructions in a quote</option>
+          <option value="fleet">Fleet: four machines</option>
+        </select>
+        <button id="demo-start" class="side-wide">Start a fresh demo</button>
+      </div>
+    </section>
   </aside>
   <main>
     <header>
@@ -33,7 +54,7 @@
     <section class="source alert-bar">
       <div>
         <small class="muted">Latest alert</small>
-        <div id="alert-text">No alert yet. Run the detector replay to start.</div>
+        <div id="alert-text">No alert yet. Pick a scenario and click Start a fresh demo in the demo controls.</div>
       </div>
       <span id="live" class="muted">Connecting…</span>
     </section>
@@ -114,33 +135,6 @@
         <p class="note">Downtime savings are estimates from stated assumptions, not measured outcomes.</p>
       </article>
     </div>
-
-    <details class="paste" id="demo-controls">
-      <summary>Demo controls: start a fresh demo, delay the order, sensor got worse</summary>
-      <p class="note">Start from a clean slate, then try simulated events on the plan on screen. The agent reacts on its own.</p>
-      <div class="actions">
-        <label for="demo-scenario">Scenario</label>
-        <select id="demo-scenario" class="scenario">
-          <option value="out_of_stock">Part out of stock: order, then book after delivery</option>
-          <option value="in_stock">Part in stock: book the earliest engineer</option>
-          <option value="no_engineer">No engineer free in time: escalate</option>
-          <option value="injection">Hidden instructions in a supplier quote</option>
-          <option value="fleet">Fleet: four machines share engineers and stock</option>
-        </select>
-        <button id="demo-start">Start a fresh demo</button>
-      </div>
-      <div class="actions">
-        <label for="delay-hours">Supplier delays the order by</label>
-        <input id="delay-hours" type="number" min="1" step="1" value="8" class="hours"> h
-        <button id="delay-order" class="secondary">Delay the order</button>
-      </div>
-      <div class="actions">
-        <button id="sensor-worse" class="secondary">Sensor got worse</button>
-        <span class="muted">Failure predicted an hour before the booked repair (simulated reading).</span>
-      </div>
-      <p id="demo-message" class="note" role="status"></p>
-    </details>
-
 
     <footer>Demo-only dashboard · No real machinery or purchases are controlled · Screens by our teammate</footer>
   </main>

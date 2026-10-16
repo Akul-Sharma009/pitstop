@@ -49,7 +49,7 @@ function showFeedback(feedback) {
 function showAlert(alert) {
   if (!alert) {
     setText('op-failure', null);
-    $('alert-text').textContent = 'No alert yet. Run the detector replay to start.';
+    $('alert-text').textContent = 'No alert yet. Pick a scenario and click Start a fresh demo in the demo controls.';
     return;
   }
   const kind = String(alert.failure_type).replace('_', ' ');
