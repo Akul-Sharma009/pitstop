@@ -245,3 +245,34 @@ def test_no_fresh_demo_while_the_agent_is_planning(monkeypatch):
     response = client.post("/api/demo/start", json={})
     assert response.status_code == 409 and "still planning" in response.json()["detail"]
     assert calls["deleted"] == 0 and calls["alerts"] == []
+
+
+def test_progress_lists_the_current_plans_steps_in_plain_words(monkeypatch):
+    """While the agent plans, the screens show what it has done so far, from the factory's call log."""
+    factory = FakeFactory()
+    m1 = factory.client()
+    m1.machine_id = "M-01"
+    m1.check_inventory(PART)  # before the alert: an older plan's call, not listed
+    received = factory.calls[-1]["at"]
+    factory.calls[-1]["at"] = "2026-10-14T07:00:00+00:00"  # the fake factory's clock stands still: backdate it
+    m1.check_inventory(PART)
+    order = m1.draft_purchase_order(PART, 1, "M-01", "wear")
+    slots = m1.find_free_engineers("cnc_tooling", order["expected_delivery"], "2026-10-16T08:00:00+00:00", 30)["slots"]
+    m1.draft_booking(slots[0]["engineer_id"], "M-01", slots[0]["slot_start"], slots[0]["slot_end"], "swap", order["po_id"])
+
+    def agent(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("M-01"):
+            return httpx.Response(200, json={"alert": {"machine_id": "M-01"}, "result": None, "received_at": received})
+        return httpx.Response(404, json={})
+
+    monkeypatch.setattr(server, "clients", {
+        "agent": httpx.Client(base_url="http://agent", transport=httpx.MockTransport(agent)),
+        "mocks": httpx.Client(base_url="http://mocks", transport=httpx.MockTransport(factory.handle)),
+    })
+    client = TestClient(server.app)
+    body = client.get("/api/progress/M-01").json()
+    assert body["steps"][0] == f"Checked stock: 0 × {PART} on hand"
+    assert body["steps"][1].startswith("Drafted PO-0001: 1 × EM-1004")
+    assert body["steps"][-1].startswith("Drafted booking BK-0001: " + slots[0]["name"])
+    assert len(body["steps"]) == 4 and body["next"].startswith("Checking the plan")
+    assert client.get("/api/progress/M-09").json() == {"steps": [], "next": None}

@@ -126,8 +126,31 @@ function load(data, demo = false) {
 // While the agent plans, the status pill counts up, so a 2–3 minute plan doesn't look stuck. The agent's
 // model is shared (AMD's Token Factory) and a plan is ~7 model calls in a row.
 let planningSince = null;
+let planningMachine = null;
+let tick = 0;
+
+// What the agent has done so far (the factory's log of its calls), as a growing checklist.
+async function showProgress() {
+  const machine = planningMachine;
+  try {
+    const response = await fetch(`/api/progress/${encodeURIComponent(machine)}`);
+    const body = await response.json();
+    if (machine !== planningMachine || result) return;
+    const items = body.steps.map((step) => Object.assign(document.createElement('li'), { textContent: step }));
+    if (body.next) items.push(Object.assign(document.createElement('li'), { textContent: body.next, className: 'next' }));
+    $('progress').replaceChildren(...items);
+    $('progress').hidden = !items.length;
+  } catch {
+    // the timer keeps counting; the next tick tries again
+  }
+}
+
 function tickPlanning() {
-  if (!planningSince || result) return;
+  if (!planningSince || result) {
+    $('progress').hidden = true;
+    return;
+  }
+  if (planningMachine && tick++ % 3 === 0) showProgress();
   const seconds = Math.max(0, Math.floor((Date.now() - new Date(planningSince)) / 1000));
   const elapsed = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
   $('status').textContent = `Agent is planning… ${elapsed}`;
@@ -142,6 +165,8 @@ function clearPlan(status) {
   setText('diagnosis', status === 'planning' ? 'The agent is reading the manual, checking stock and finding an engineer…' : 'The plan appears here when the agent has finished.');
   for (const id of ['machine', 'part', 'planned', 'stock', 'delivery', 'engineer', 'window', 'op-planned', 'op-saved', 'op-money', 'op-status', 'op-machine', 'op-engineer', 'op-window']) setText(id, null);
   $('steps').replaceChildren();
+  $('progress').replaceChildren();
+  $('progress').hidden = true;
   $('escalation-row').hidden = true;
   $('trace').textContent = 'No tool calls yet.';
   $('warnings').replaceChildren(Object.assign(document.createElement('li'), { textContent: 'No plan loaded.' }));
@@ -291,6 +316,7 @@ async function poll() {
     showFeedback(latest.feedback);
     machineHeader(machine || latest.alert?.machine_id || latest.result?.machine_id);
     planningSince = !latest.result && latest.alert ? latest.received_at : null;
+    planningMachine = planningSince ? (machine || latest.alert?.machine_id) : null;
     if (latest.result) load(latest.result);
     else clearPlan(latest.alert ? 'planning' : null);
     tickPlanning();

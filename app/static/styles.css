@@ -51,3 +51,8 @@ aside{position:sticky;top:0;height:100vh;overflow-y:auto}
 .side-fresh{display:flex;flex-direction:column;gap:8px;border-top:1px solid #293548;padding-top:12px;margin-top:4px}
 .scenario{background:#0c1420;border:1px solid #36465a;color:#e7edf5;border-radius:8px;padding:9px;font:inherit;font-size:13px;width:100%}
 @media(max-width:650px){aside{position:static;height:auto;overflow:visible}.side-demo{margin-top:14px}}
+.progress{list-style:none;padding:0;margin:0 0 18px;font-size:13px;line-height:1.5}
+.progress li{padding:6px 0 6px 26px;position:relative;color:#c8d4e2;border-top:1px solid #2b3b4c}
+.progress li::before{content:"✓";position:absolute;left:4px;color:#55d8c1;font-weight:700}
+.progress li.next{color:#f6d98a}
+.progress li.next::before{content:"⋯";color:#f6d98a}

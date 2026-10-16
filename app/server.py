@@ -8,6 +8,7 @@ served together with a small API so the page needs one address and no CORS:
        a reject with {"reason": "..."} also asks the agent for a new plan with that reason (replan)
   POST /api/purchase-orders/{id}/delay       demo control: the supplier delays the order; a pending booking that
        now starts before the part arrives is rejected and the agent replans (an approved one: the manager decides)
+  GET  /api/progress/{machine_id}           while the agent plans: what it has done so far, from the mocks' call log
   POST /api/demo/start                      demo control: {"scenario": ...} resets the mock factory to a demo scenario,
        forgets every plan and sends fresh (simulated) alerts, so each judge can start from a clean slate
   POST /api/incidents/{machine_id}/worse     demo control: a simulated new reading moves the machine's predicted
@@ -103,6 +104,54 @@ def machine_incident(machine_id: str) -> Any:
         return relay(client("agent").get(f"/incidents/{machine_id}"))
     except httpx.HTTPError:
         raise HTTPException(503, "the agent service is not reachable")
+
+
+@app.get("/api/progress/{machine_id}")
+def progress(machine_id: str) -> dict[str, Any]:
+    """The steps of the machine's current plan so far, in plain words, from the factory's log of agent calls
+    since the alert arrived (in Evolus the manual search happens in its knowledge library, so it isn't listed)."""
+    incident = client("agent").get(f"/incidents/{machine_id}")
+    if incident.status_code != 200:
+        return {"steps": [], "next": None}
+    since = utc(incident.json().get("received_at"))
+    calls = client("mocks").get("/admin/calls").json().get("calls", [])
+    mine = [c for c in calls if c.get("machine_id") == machine_id and since and utc(c.get("at")) and utc(c["at"]) >= since]
+    names = {slot.get("engineer_id"): slot.get("name") for c in mine if c["tool"] == "find_free_engineers"
+             for slot in (c.get("result") or {}).get("slots") or []}
+    steps = [step_text(c, names) for c in mine]
+    following = {"check_inventory": "Getting supplier quotes or finding an engineer…",
+                 "get_supplier_quote": "Choosing a supplier and drafting the order…",
+                 "draft_purchase_order": "Finding an engineer after the part arrives…",
+                 "find_free_engineers": "Booking the engineer…", "draft_booking": "Checking the plan and writing it up…"}
+    nxt = following.get(mine[-1]["tool"], "Working on the next step…") if mine else "Reading the alert and the manual…"
+    return {"steps": steps, "next": nxt}
+
+
+def step_text(call: dict[str, Any], names: dict[str, str] | None = None) -> str:
+    """One agent tool call in plain words, for the planning screen."""
+    tool, args, result = call["tool"], call.get("arguments") or {}, call.get("result") or {}
+    part = args.get("part_number") or result.get("part_number") or "the part"
+    if "error" in result:
+        text = str(result["error"]).split(": ", 1)[-1]
+        return {"check_inventory": f"Checked stock: {part} is not a known part",
+                "draft_purchase_order": f"Order not placed: {text}",
+                "find_free_engineers": f"Engineer search refused: {text}",
+                "draft_booking": f"Slot not available: {text}"}.get(tool, f"{tool}: {text}")
+    if tool == "check_inventory":
+        return f"Checked stock: {result.get('quantity_on_hand', 0)} × {part} on hand"
+    if tool == "get_supplier_quote":
+        offers = result.get("offers") or []
+        return f"Got {len(offers)} supplier quote{'s' * (len(offers) != 1)} for {part}"
+    if tool == "draft_purchase_order":
+        return (f"Drafted {result.get('po_id')}: {result.get('quantity', 1)} × {part} from {result.get('supplier')}, "
+                f"arrives {readable(result.get('expected_delivery'))}")
+    if tool == "find_free_engineers":
+        slots = result.get("slots") or []
+        return f"Searched for engineers: {len(slots)} free slot{'s' * (len(slots) != 1)} in the repair window"
+    if tool == "draft_booking":
+        engineer = (names or {}).get(result.get("engineer_id")) or result.get("engineer_id")
+        return f"Drafted booking {result.get('booking_id')}: {engineer} at {readable(result.get('start'))}"
+    return tool
 
 
 @app.get("/api/{kind}/{item_id}")

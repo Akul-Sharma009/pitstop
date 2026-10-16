@@ -151,7 +151,7 @@ class MockFactory:
             result = {"slots": body} if tool == "find_free_engineers" else body
         self.seq += 1
         self.calls.append({"seq": self.seq, "tool": tool, "arguments": arguments, "result": result,
-                           "machine_id": self._machine(request)})
+                           "machine_id": self._machine(request), "at": self.clock().isoformat()})
 
     # --- demo control ---------------------------------------------------------------------------
 
