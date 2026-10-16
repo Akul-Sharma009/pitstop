@@ -40,7 +40,6 @@
 
     <div id="fleet-page" hidden>
       <div class="actions fleet-actions">
-        <button id="load-fleet">Load demo fleet</button>
         <button id="follow-latest" class="secondary">Follow latest alert</button>
       </div>
       <p id="fleet-message" class="muted" role="status">Loading fleet…</p>
@@ -116,7 +115,7 @@
       </article>
     </div>
 
-    <details class="paste" id="demo-controls">
+    <details class="paste" id="demo-controls" hidden>
       <summary>Demo controls</summary>
       <p class="note">Simulated events for the selected machine's plan. The agent reacts on its own.</p>
       <div class="actions">
@@ -131,15 +130,6 @@
       <p id="demo-message" class="note" role="status"></p>
     </details>
 
-    <details class="paste">
-      <summary>Load a result by hand</summary>
-      <label for="result-json">AgentResult JSON from <code>POST /incidents</code></label>
-      <textarea id="result-json" rows="4" placeholder='{"status":"awaiting_approval","machine_id":"M-01",...}'></textarea>
-      <div class="actions">
-        <button id="load-json">Load AgentResult</button>
-        <button id="load-sample" class="secondary">Load demo result</button>
-      </div>
-    </details>
 
     <footer>Demo-only dashboard · No real machinery or purchases are controlled · Screens by our teammate</footer>
   </main>

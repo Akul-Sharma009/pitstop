@@ -25,23 +25,6 @@ function machineHeader(id) {
   $('machine-header').textContent = `PITSTOP / CNC MILL ${id || '—'}`;
 }
 
-const sample = {
-  status: 'awaiting_approval', machine_id: 'M-01', diagnosis: 'Cutting tool worn close to its limit.',
-  repair_steps: ['Stop spindle and follow lockout procedure', 'Replace main end mill EM-1004', 'Set tool offsets and perform an authorized test cut'],
-  part_number: 'EM-1004', part_name: 'Carbide end mill 10 mm 4-flute', part_in_stock: false,
-  purchase_order_id: 'PO-DEMO', expected_delivery: '2026-10-15T10:00:00+00:00', booking_id: 'BK-DEMO',
-  engineer_name: 'Priya Nair', booking_start: '2026-10-15T14:00:00+00:00', booking_end: '2026-10-15T14:30:00+00:00',
-  operator_summary: 'The main cutting tool is nearing its wear limit. A replacement and engineer visit are planned, pending manager approval.',
-  downtime: { planned_min: 30, unplanned_h: 8, saved_h: 7.5, cost_per_h: 500, currency: 'SGD', money_saved: 3750,
-    assumptions: 'An unplanned tool breakdown stops the machine for about 8 h; downtime costs about 500 SGD per hour.' },
-  warnings: ['DEMO ONLY: Purchase-order and booking IDs are illustrative; no requests can be sent for these IDs.'],
-  trace: [
-    { tool: 'check_inventory', arguments: { part_number: 'EM-1004' }, result: { quantity_on_hand: 0 } },
-    { tool: 'get_supplier_quote', arguments: { part_number: 'EM-1004' }, result: { lead_time_hours: 24 } },
-  ],
-  backend: 'demo',
-};
-
 const value = (x) => (x === null || x === undefined || x === '' ? '—' : String(x));
 // Times in UTC, the same as the agent's summary.
 const date = (x) => (x
@@ -383,34 +366,6 @@ async function pollFleet() {
   }
 }
 
-$('load-fleet').addEventListener('click', () => {
-  fleetDemo = true;
-  draftStates.clear();
-  incidents = [1, 2, 3, 4].map((n) => {
-    const id = `M-0${n}`;
-    const escalated = n === 4;
-    return {
-      alert: { machine_id: id, failure_type: escalated ? 'coolant_pump' : 'tool_wear', simulated: escalated,
-        predicted_failure_at: `2026-10-${escalated ? '17' : '16'}T18:00:00Z` },
-      result: { ...sample, machine_id: id, status: escalated ? 'escalated' : 'awaiting_approval',
-        part_number: escalated ? 'CP-220' : sample.part_number, part_name: escalated ? 'Coolant pump' : sample.part_name,
-        part_in_stock: n === 1, purchase_order_id: n === 2 || n === 3 ? `PO-DEMO-${n}` : null,
-        expected_delivery: n === 2 || n === 3 ? sample.expected_delivery : null,
-        booking_id: escalated ? null : `BK-DEMO-${n}`, engineer_name: escalated ? null : n === 3 ? 'Wei Ling Ho' : 'Priya Nair',
-        booking_start: escalated ? null : `2026-10-15T${n === 1 ? '07' : n === 2 ? '14' : '15'}:00:00Z`,
-        booking_end: escalated ? null : `2026-10-15T${n === 1 ? '07' : n === 2 ? '14' : '15'}:30:00Z`,
-        diagnosis: escalated ? 'Simulated coolant-pump failure: replacement cannot arrive before predicted failure.' : sample.diagnosis,
-        escalation_reason: escalated ? 'Pump lead time is 72 hours; failure is predicted in 40 hours.' : null,
-        repair_steps: escalated ? ['Manager to arrange an urgent coolant-pump repair.'] : sample.repair_steps,
-        operator_summary: escalated ? 'Simulated coolant-pump alert escalated to the manager. No repair is booked.' : sample.operator_summary,
-        downtime: escalated ? null : sample.downtime },
-      received_at: null, feedback: null, previous: null,
-    };
-  });
-  $('fleet-message').textContent = 'Demo fleet loaded. Approval buttons are disabled for demo machines.';
-  renderFleet();
-});
-
 $('follow-latest').addEventListener('click', () => {
   selectedMachine = null;
   fleetDemo = false;
@@ -426,10 +381,6 @@ $('follow-latest').addEventListener('click', () => {
   pollFleet();
 });
 
-$('load-sample').addEventListener('click', () => load(sample, true));
-$('load-json').addEventListener('click', () => {
-  try { load(JSON.parse($('result-json').value)); } catch (e) { $('message').textContent = `Invalid input: ${e.message}`; }
-});
 for (const kind of ['po', 'booking']) for (const action of ['approve', 'reject']) $(`${kind}-${action}`).addEventListener('click', () => decision(kind, action));
 for (const button of document.querySelectorAll('.nav-btn')) {
   button.addEventListener('click', () => {
@@ -466,6 +417,8 @@ async function pollStatus() {
 }
 
 // Demo controls: a supplier delay or a worse sensor reading for the plan on screen (app/server.py).
+// Shown only on the ?demo address (the video), so judges see the plain console.
+$('demo-controls').hidden = !new URLSearchParams(location.search).has('demo');
 async function demoEvent(path, body) {
   $('demo-message').textContent = 'Sending…';
   try {
