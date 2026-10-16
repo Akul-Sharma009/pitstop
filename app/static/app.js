@@ -74,6 +74,8 @@ function load(data, demo = false) {
   setText('part', data.part_number ? [data.part_number, data.part_name].filter(Boolean).join(' · ') : 'Not selected');
   setText('planned', data.downtime?.planned_min != null ? `${data.downtime.planned_min} min` : '—');
   setText('diagnosis', data.diagnosis);
+  $('model-note').textContent = data.note || '';
+  $('model-note').hidden = !data.note;
   $('steps').replaceChildren(...(data.repair_steps || []).map((step) => Object.assign(document.createElement('li'), { textContent: step })));
   setText('stock', data.part_in_stock === true ? 'Yes' : data.part_in_stock === false ? 'No' : 'Unknown');
   setText('delivery', data.expected_delivery ? date(data.expected_delivery) : 'No order needed');
@@ -154,7 +156,7 @@ function tickPlanning() {
   const seconds = Math.max(0, Math.floor((Date.now() - new Date(planningSince)) / 1000));
   const elapsed = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
   $('status').textContent = `Agent is planning… ${elapsed}`;
-  setText('diagnosis', 'The agent is working on a plan (usually 1–3 minutes). What it has done so far:');
+  setText('diagnosis', 'The agent is working on a plan (up to 3 minutes). What it has done so far:');
 }
 setInterval(tickPlanning, 1000);
 
@@ -167,6 +169,7 @@ function clearPlan(status) {
   $('steps').replaceChildren();
   $('progress').replaceChildren();
   $('progress').hidden = true;
+  $('model-note').hidden = true;
   $('escalation-row').hidden = true;
   $('trace').textContent = 'No tool calls yet.';
   $('warnings').replaceChildren(Object.assign(document.createElement('li'), { textContent: 'No plan loaded.' }));

@@ -56,3 +56,4 @@ aside{position:sticky;top:0;height:100vh;overflow-y:auto}
 .progress li::before{content:"✓";position:absolute;left:4px;color:#55d8c1;font-weight:700}
 .progress li.next{color:#f6d98a}
 .progress li.next::before{content:"⋯";color:#f6d98a}
+.model-note{color:#f6d98a;border-left-color:#75603b;font-size:14px}
