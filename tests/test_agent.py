@@ -376,3 +376,19 @@ def test_null_written_as_text_is_nothing():
 
     plan, warnings = reconcile({"purchase_order_id": "null", "booking_id": "None", "escalation_reason": "N/A"}, [])
     assert warnings == [] and plan["purchase_order_id"] is None and plan["booking_id"] is None
+
+
+def test_a_replan_on_the_standing_order_needs_no_new_stock_check():
+    """Through Evolus the manual search isn't in the trace; a replan that reuses the order skips the stock check."""
+    from agent import guard
+    from agent.models import AgentResult, ToolCall
+
+    order = {"po_id": "PO-0001", "part_number": PART, "status": "pending_approval"}
+    booking = {"booking_id": "BK-0002", "start": "2026-10-15T14:00:00+00:00"}
+    trace = [ToolCall(tool="draft_purchase_order", arguments={"from_previous_plan": True}, result=order),
+             ToolCall(tool="draft_booking", arguments={}, result=booking)]
+    result = AgentResult(status="awaiting_approval", machine_id="M-01", part_number=PART, purchase_order_id="PO-0001",
+                         booking_id="BK-0002", trace=trace)
+    assert not any("not found in the manual" in w for w in guard.check(result, make_alert()))
+    result.trace = trace[1:]  # no order to lean on: still flagged
+    assert any("not found in the manual" in w for w in guard.check(result, make_alert()))
