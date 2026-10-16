@@ -123,6 +123,18 @@ function load(data, demo = false) {
   queueNote = '';
 }
 
+// While the agent plans, the status pill counts up, so a 2–3 minute plan doesn't look stuck. The agent's
+// model is shared (AMD's Token Factory) and a plan is ~7 model calls in a row.
+let planningSince = null;
+function tickPlanning() {
+  if (!planningSince || result) return;
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(planningSince)) / 1000));
+  const elapsed = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+  $('status').textContent = `Agent is planning… ${elapsed}`;
+  setText('diagnosis', `The agent is reading the manual, checking stock and finding an engineer (${elapsed} so far; usually 1–3 minutes)…`);
+}
+setInterval(tickPlanning, 1000);
+
 function clearPlan(status) {
   result = null;
   for (const button of document.querySelectorAll('.buttons button')) disarm(button);
@@ -278,8 +290,10 @@ async function poll() {
     showAlert(latest.alert);
     showFeedback(latest.feedback);
     machineHeader(machine || latest.alert?.machine_id || latest.result?.machine_id);
+    planningSince = !latest.result && latest.alert ? latest.received_at : null;
     if (latest.result) load(latest.result);
     else clearPlan(latest.alert ? 'planning' : null);
+    tickPlanning();
   } catch {
     if (machine !== target() || isDemo) return;
     $('live').textContent = 'Agent service not reachable';
