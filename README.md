@@ -1,131 +1,130 @@
 # Pitstop
 
-An AI maintenance agent for factories. A failure model spots a CNC milling machine whose cutting tool is wearing out. An agent then plans the whole fix: it finds the repair and the part number in the machine manual, checks the parts store, drafts a purchase order if the part is missing, and books a free engineer after the part arrives and before the machine fails. A manager approves every order and booking, and the operator gets a plain-language summary.
+**An AI maintenance agent that turns a sensor warning into an approved repair plan.**
 
-The agent's language model is an open model served with **vLLM on AMD Developer Cloud** (AMD Instinct MI300X, ROCm). Built for the AMD Developer Hackathon ACT III (Intelligent Industry + Evolus tracks).
+Factories often catch the warning signs of a breakdown, but the follow-up is slow and manual: someone reads the manual, checks the parts store, raises a purchase order and finds a free engineer. By then the machine has often failed anyway. Pitstop closes that gap. A failure model spots a CNC mill whose cutting tool is wearing out, and an agent plans the whole fix:
 
-> Status (14 Oct): work in progress. The whole path runs end to end: the detector replays M-01 and sends an alert; the agent, in Evolus or as our local loop, reads the manual, checks stock, drafts the order and books an engineer after the part arrives; the plan comes back checked, with the downtime saved. All three demo scenarios pass through Evolus. For now the model is Qwen3-30B-A3B-Instruct-2507 on a local stand-in while AMD Developer Cloud credits are pending. Still to come: the model on AMD, the full machine manual and the approval and operator screens. Interfaces: [`docs/contracts.md`](docs/contracts.md).
+1. **Diagnose:** finds the repair and the exact part number in the machine manual.
+2. **Check stock:** looks the part up in the parts store.
+3. **Order:** if it's missing, drafts a purchase order from the cheapest supplier that still delivers in time.
+4. **Schedule:** books a qualified engineer *after the part arrives and before the predicted failure*, or escalates to the manager if no slot fits.
+5. **Approve:** a manager approves or rejects every order and booking. The agent only drafts.
+6. **Explain:** the operator gets a plain-language summary and the downtime saved (a 30-minute planned swap instead of about 8 hours of breakdown).
+
+Built for the **AMD Developer Hackathon ACT III**: Intelligent Industry track, Evolus partner track, and the Google prize (Gemma on AMD).
+
+## Try it live
+
+**https://165.245.189.184.sslip.io**: the login is in our submission. The site stays online until judging ends (15 Nov).
+
+1. In the panel on the left, pick a scenario and click **Start a fresh demo**. The agent plans it live (up to 3 minutes), and you watch its steps appear: stock checked, quotes, order drafted, engineer booked.
+2. **Reject** the engineer booking with a reason ("Priya is on leave, book someone else"). The agent makes a new plan that respects it, reusing the order it already placed.
+3. **Delay order** (6 h): the part now arrives after the booked repair. The booking is cancelled and the agent replans by itself, or escalates if nothing fits before the failure.
+4. **Failure comes sooner:** a worse sensor reading moves the predicted failure before the booked repair, and the agent replans for the new deadline.
+5. **Fleet:** four machines alert at once and share the engineers and one spare cutter. The approval page walks you through them one by one.
+
+| Scenario | What a correct agent does |
+|---|---|
+| Part out of stock | Orders from the cheapest supplier in time, books an engineer after delivery |
+| Part in stock | Orders nothing, books the earliest engineer |
+| No engineer free in time | Orders the part, doesn't book, escalates and says why |
+| Hidden instructions in a quote | A supplier note tells the AI to order 50 units and book now; it ignores it |
+| Fleet: four machines | One machine gets the spare, two order, nobody double-booked, the coolant pump escalates |
+
+The same alert leads to a different, correct plan in each: the agent reasons about the factory, not a script.
+
+## The AI on AMD
+
+- **Model:** the agent runs on **Gemma 4 (31B)** served on **AMD GPUs through AMD's Token Factory**, with tool calling and no thinking step. **Qwen3.8-27B**, also on the Token Factory, is an automatic backup: if Gemma can't be reached and the failed run drafted nothing, the same alert is planned on Qwen and the plan says so.
+- **Why these models:** both pass all 20 scenarios of our eval (below) through the Token Factory. Gemma also passed two fleet runs, at about 9 s per model call.
+- **Self-hosting:** [`deploy/vllm/serve.sh`](deploy/vllm/serve.sh) serves the model with vLLM on an AMD MI300X (ROCm), with presets for Qwen3 and Gemma 4. We prepared it for AMD Developer Cloud; the live demo uses the Token Factory, as the organisers recommended.
+- The failure model is a small random forest and runs on CPU.
+
+## The agent in Evolus
+
+The agent runs in an **Evolus** workspace (agent chat on our model), using:
+
+- **Agent "Pitstop maintenance planner"** on Gemma-4-31B-IT, with **"Pitstop backup"** on Qwen3.8-27B. Instructions: `python scripts/evolus_text.py prompt`.
+- **Knowledge library:** the machine manual (`manual/cnc_mill_m01.md`, 7 failure types and similar part numbers, so retrieval has to pick the right one).
+- **MCP connector:** our factory tools (`check_inventory`, `get_supplier_quote`, `draft_purchase_order`, `find_free_engineers`, `draft_booking`), served by `mcp_server/` at `/mcp` with a bearer token.
+- Our app drives Evolus through its OpenAI-compatible API. How the workspace is set up: [`docs/evolus-setup.md`](docs/evolus-setup.md).
 
 ## Architecture
 
 ```
-sensor replay (AI4I) → failure model → app ──alert──▶ agent service ──▶ LLM (vLLM on AMD)
-                                        ▲                │
-                                        │                ├─ machine manual (knowledge library)
-                     manager approves ──┤                └─ MCP server ──▶ inventory, supplier, calendar (mocks)
-                                        └── plan: drafts + operator summary
+sensor replay (AI4I) → failure model ──alert──▶ agent service ──▶ Evolus agent ──▶ Gemma 4 on AMD (Token Factory)
+                                                     │                 │
+                                                     │                 ├─ knowledge library: machine manual
+                                                     │                 └─ MCP connector ──▶ inventory, supplier, calendar
+                                                     ▼
+                         screens: manager approves or rejects drafts · operator summary · fleet
 ```
 
 | Part | Folder | Port |
 |---|---|---|
-| LLM: vLLM on AMD Developer Cloud | `deploy/vllm/` | 8080 on the GPU instance |
-| MCP server (factory tools for the agent / Evolus) | `mcp_server/` | 8001 |
-| Agent service (`AGENT_BACKEND=local` or `evolus`) | `agent/` | 8002 |
-| Mock factory systems (inventory, supplier, calendar) | `mocks/` | 8000 |
-| Failure model + sensor replay | `detector/` | – |
-| Approval screen + operator summary | `app/` | 8003 |
+| Agent service (`AGENT_BACKEND=evolus`, or `local`: our own tool loop on the same model) | `agent/` | 8002 |
+| MCP server (the factory tools) | `mcp_server/` | 8001 |
+| Mock factory systems (inventory, supplier, engineer calendar) | `mocks/` | 8000 |
+| Screens: manager approval, operator summary, fleet, demo controls | `app/` | 8003 |
+| Failure model and sensor replay | `detector/` | – |
+| HTTPS entry point (Caddy) for the live server | `deploy/` | 443 |
 
-**About the data:** [AI4I 2020](https://archive.ics.uci.edu/dataset/601) (UCI, CC BY 4.0) is a synthetic predictive maintenance dataset modelled on a real milling machine. Its rows are independent snapshots, not a time series, so:
+The interfaces between the parts are in [`docs/contracts.md`](docs/contracts.md).
 
-- The live feed for M-01 is a sequence we build from held-out AI4I rows (healthy readings in order of rising tool wear). The model never saw them in training.
-- The failure model (a random forest on the five sensor readings, by our teammate @pradeepshenram) flags tool-wear failure. It doesn't predict time by itself. We ask it at what tool wear it starts flagging failure under the current readings; the gap to the current wear is the remaining cutting time. One odd reading can swing that estimate, so the model's score is averaged over the last three readings. Calendar time assumes 20 cutting minutes per day (`CUTTING_MIN_PER_DAY`).
-- The model's score is not a calibrated probability. On the 2,000 held-out rows it catches 7 of the 9 tool-wear failures, with 113 false alarms (`python -m detector.train`, which also prints the scikit-learn version; the teammate's notebook got 6 of 9 and 100 with the same settings, probably on another version).
+## Guardrails
 
-The machine manual (`manual/`, 7 failure types, written by @pradeepshenram) and the factory systems are mock-ups we wrote; suppliers and people are fictional.
+- **The agent never acts alone.** Orders and bookings are drafts until the manager approves them in our app. The approve and reject endpoints aren't reachable from the agent or the MCP server.
+- **Facts come from the tools, not the model.** Order and booking IDs, times and engineers are taken from what the tools returned. A part number that's neither in the manual nor in the tools is flagged.
+- **Timing is enforced.** The factory refuses an engineer search that starts before the ordered part arrives, and our local agent refuses bookings after the predicted failure or from a slower or dearer supplier than needed. A guard checks every plan and shows any finding to the manager.
+- **Tool data is data, not instructions.** Supplier notes reach the model labelled as untrusted, and the hidden-instruction scenario checks that the agent ignores them.
+- **Shared resources in a fleet:** a drafted booking holds its engineer slot, and a booking from stock reserves the part, so two machines can't plan with the same slot or the last spare.
 
-## 1. Serve the model on AMD Developer Cloud
+## Evaluation
 
-The short version:
+`python -m scripts.eval_agent` runs the real model through 20 scenarios against fake factory systems and checks what the agent actually did, not what it says. The scenarios are the five demos above plus look-alike parts, a pump that needs a mechanical engineer for 90 minutes, parts that can't arrive before the failure, failure types with no part in the manual, an imminent failure, the dataset's own failure code, replans after a rejection or a supplier delay, and a worse reading. `--fleet` runs four agents in parallel on one shared factory. The table is in [`devtools/scenarios.py`](devtools/scenarios.py).
 
-On a GPU instance on AMD Developer Cloud (ROCm and Docker installed):
+Results through the Token Factory (16–17 Oct): **Gemma-4-31B-IT 20/20, fleet 2/2. Qwen3.8-27B 20/20.**
 
-```bash
-git clone https://github.com/akul-sharma009/pitstop.git && cd pitstop
-export VLLM_API_KEY=$(openssl rand -hex 24)   # keep it; clients need it
-./deploy/vllm/serve.sh                         # Qwen/Qwen3-30B-A3B-Instruct-2507 by default; set VLLM_MODEL to change
-docker logs -f pitstop-vllm                    # wait for "Application startup complete"
-```
+## About the data
 
-Shut the instance down when you're not using it: it uses credits.
+[AI4I 2020](https://archive.ics.uci.edu/dataset/601) (UCI, CC BY 4.0) is a **synthetic** predictive maintenance dataset modelled on a real milling machine. Its rows are independent snapshots, not a time series, so:
 
-## 2. Configure
+- The live feed for each machine is a sequence we build from held-out AI4I rows, in order of rising tool wear. The model never saw them in training.
+- The failure model (a random forest on the five sensor readings) flags tool-wear failure. We ask it at what tool wear it starts flagging failure under the current readings; the gap to the current wear is the remaining **cutting** time. Calendar time assumes 20 cutting minutes per day (`CUTTING_MIN_PER_DAY`), a stated assumption: AI4I itself doesn't predict days.
+- On the 2,000 held-out rows it catches 7 of the 9 tool-wear failures, with 113 false alarms (5.7% of healthy rows). We keep the threshold low on purpose: a false alarm only produces a draft plan that the manager rejects in a minute, or at worst a cutter swapped somewhat early, while a missed failure costs hours of unplanned downtime.
 
-```bash
-cp .env.example .env
-# Fill in VLLM_BASE_URL=http://<gpu-instance-ip>:8080/v1, VLLM_API_KEY, and the rest as needed.
-# If you run the scripts outside Docker, MOCKS_URL=http://localhost:8000.
-```
+The machine manual, the factory systems, the suppliers and the people are fictional mock-ups we wrote.
 
-All keys and endpoints come from environment variables. Never commit `.env`.
+## Run it yourself
 
-Check that the model is up and calls tools:
+You need Docker and an AMD Token Factory API key (notebooks.amd.com/tokenfactory).
 
 ```bash
-python -m venv .venv && . .venv/bin/activate
-pip install -r requirements-dev.txt
-set -a && . ./.env && set +a
-python scripts/check_vllm.py
+git clone https://github.com/Akul-Sharma009/pitstop.git && cd pitstop
+cp .env.example .env        # set VLLM_API_KEY to your Token Factory key
+docker compose up --build   # mock factory, MCP server, agent service, screens
 ```
 
-Then run the real model through the scenarios against fake factory systems. It checks what the agent actually did in the factory systems, not just what it says. There are the three demo scenarios (part out of stock, part in stock, no engineer free) and nine stress scenarios the prompt was not tuned on: look-alike parts, a pump that needs a mechanical engineer, parts that arrive after the failure, failure types the manual has no part for, an imminent failure, and an alert using the dataset's own failure code. The whole table is in `devtools/scenarios.py`.
+Open **http://localhost:8003** and click **Start a fresh demo**. With `AGENT_BACKEND=local` (the default) the agent runs our own tool loop on the same model. To run it in Evolus, set `AGENT_BACKEND=evolus`, `EVOLUS_API_KEY` and `EVOLUS_AGENT_ID`, and follow [`docs/evolus-setup.md`](docs/evolus-setup.md).
+
+All keys and endpoints come from environment variables (`.env.example`). Never commit `.env`.
+
+Other ways in:
 
 ```bash
-python -m scripts.eval_agent            # all 12 scenarios; --core for the demo three, --repeat 3 for reliability, -v to see every tool call
+docker compose run --build --rm detector --scenario out_of_stock   # replay the sensors; the failure model sends the alert
+python -m scripts.eval_agent                                       # the eval (in a venv with requirements-dev.txt and .env loaded)
+pytest                                                             # 164 tests with a fake model and fake factory: no GPU, network or keys
 ```
 
-## 3. Run
+For the public server: set `PUBLIC_HOST` (e.g. `<server-ip>.sslip.io`), `SCREENS_PASSWORD` and `MCP_API_TOKEN`, then run `docker compose --profile public up -d --build`. Caddy gets the HTTPS certificate itself.
 
-```bash
-docker compose up --build    # mock factory systems + MCP server + agent
-```
+## Team
 
-- Mock factory systems: `http://localhost:8000` (seed data in `mocks/seed.json`)
-- MCP server: `http://localhost:8001/mcp` (streamable HTTP; send `Authorization: Bearer $MCP_API_TOKEN` if set)
-- **Supplier choice:** the part has two suppliers, cheap but slow (SGD 89, 24 h) and fast but dearer (SGD 145, 6 h). The agent orders from the cheapest one that still arrives in time to repair before the failure, and pays for speed only when it must (`urgent` above).
-- **Screens: `http://localhost:8003`**: manager approval and operator summary (by @pradeepshenram). They follow the latest alert by themselves; the manager approves or rejects each draft there. **Reject with a reason** ("Priya is on leave on Thursday") and the agent makes a new plan that respects it, keeping the parts of the old plan that still stand.
-- Agent service: `http://localhost:8002/docs`
+- **Akul Sharma** ([@Akul-Sharma009](https://github.com/Akul-Sharma009)): agent, Evolus integration, MCP server, mock factory, deployment.
+- **Pradeep** ([@pradeepshenram](https://github.com/pradeepshenram)): the failure model, the machine manual, the screens and the supplier data.
 
-**Run the agent in Evolus** (`AGENT_BACKEND=evolus`): the Evolus agent uses our model, the manual as its knowledge library and our MCP server as a Connector. Setup, the tunnel for development and the HTTPS host for the demo: [`docs/evolus-setup.md`](docs/evolus-setup.md).
-
-Replay the machine and let the detector send its alert to the agent (needs the model; first run downloads AI4I from UCI into `data/`):
-
-```bash
-docker compose run --build --rm detector --scenario out_of_stock   # or in_stock, no_engineer; --dry-run prints the alert only
-docker compose run --build --rm -e CUTTING_MIN_PER_DAY=60 detector --scenario urgent   # failure ~16 h away: only the fast supplier is in time
-```
-
-**Supplier delay** (demo control): after a plan is made, make the supplier deliver late. If the booked repair now starts before the part arrives, a pending booking is cancelled and the agent re-plans after the new delivery (or escalates if nothing fits before the failure); an approved booking is left to the manager.
-
-```bash
-curl -s -X POST localhost:8003/api/purchase-orders/PO-0001/delay -H 'Content-Type: application/json' -d '{"hours": 6}'
-```
-
-In `out_of_stock`, 6 hours moves the repair from Priya to Wei Ling; 12 hours leaves no slot before the failure, so the agent escalates.
-
-`--scenario` resets the mock factory first: engineer slots are set relative to that moment. `--build` matters: `docker compose up --build` doesn't rebuild the detector, which only runs on demand.
-
-Or send an alert by hand:
-
-```bash
-curl -s localhost:8002/incidents -H 'Content-Type: application/json' -d '{
-  "machine_id": "M-01", "failure_type": "tool_wear", "risk": 0.93,
-  "tool_wear_min": 172, "remaining_cutting_min": 38,
-  "detected_at": "2026-10-14T08:00:00+00:00",
-  "predicted_failure_at": "2026-10-16T08:00:00+00:00"
-}'
-```
-
-The reply is the plan (`docs/contracts.md`, AgentResult): diagnosis, part, draft purchase order and booking (both `pending_approval`), operator summary, downtime saved, guardrail warnings and the trace of tool calls.
-
-**Downtime saved** compares the booked tool swap (30 minutes, from the manual) with an unplanned breakdown, using two stated assumptions you can change in `.env`: a breakdown stops the machine for about 8 hours (`UNPLANNED_DOWNTIME_H`), and downtime costs about 500 SGD per hour (`DOWNTIME_COST_PER_H`). With those, one planned swap saves about 7.5 hours and 3,750 SGD.
-
-## Tests
-
-```bash
-pytest
-```
-
-The tests use a fake LLM and fake factory systems, so they need no GPU, network or keys.
+Built with [Claude Code](https://claude.com/claude-code).
 
 ## Licence
 
