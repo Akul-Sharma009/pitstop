@@ -10,6 +10,12 @@ trace comes from the mock factory's call log (agent/factory_log.py) and is check
 
 Fleet mode: the MCP tool calls don't say which machine they are for, so runs are queued one at a time and
 the factory is told the machine first (its focus). That keeps each run's trace and stock to its own machine.
+
+Backup model: EVOLUS_FALLBACK_AGENT_ID is a copy of the agent on another model (Gemma 4 primary, Qwen3.8
+backup, both on AMD's Token Factory). If the primary's model can't be reached, or Evolus doesn't answer within
+EVOLUS_TIMEOUT_S, and the failed attempt drafted nothing in the factory, the same alert runs on the backup and
+the plan says so (`note`). If it already drafted an order or booking, a second run would draft a second one:
+the plan fails instead and the manager decides.
 """
 
 from __future__ import annotations
@@ -35,7 +41,21 @@ class EvolusError(RuntimeError):
 def evolus_client() -> Any:
     from openai import OpenAI
 
-    return OpenAI(base_url=os.environ.get("EVOLUS_BASE_URL") or EVOLUS_BASE_URL, api_key=os.environ["EVOLUS_API_KEY"])
+    # No client retries: an unavailable model goes to the backup agent instead (EvolusAgent.run).
+    return OpenAI(base_url=os.environ.get("EVOLUS_BASE_URL") or EVOLUS_BASE_URL, api_key=os.environ["EVOLUS_API_KEY"],
+                  max_retries=0)
+
+
+def unavailable(exc: Exception) -> bool:
+    """The agent's model couldn't answer (not a bad plan): Evolus's own_models errors, an upstream 5xx such as
+    the Token Factory's "No available workers", or no answer in time."""
+    from agent.runner import model_unreachable
+
+    text = str(exc)
+    status = getattr(exc, "status_code", None)
+    return (model_unreachable(exc) or type(exc).__name__ in ("APITimeoutError", "Timeout", "ReadTimeout")
+            or (isinstance(status, int) and status >= 500)
+            or any(word in text for word in ("own_models", "no_available_workers", "Service Unavailable", "upstream")))
 
 
 # What we ask Evolus to reply with. An example object, not a JSON Schema: given a schema, the model filled in
@@ -92,20 +112,51 @@ def evolus_message(alert: Alert, replan: Replan | None = None) -> str:
     )
 
 
+DRAFTS = ("draft_purchase_order", "draft_booking")
+
+
 class EvolusAgent:
-    def __init__(self, llm: Any = None, agent_id: str | None = None, factory_log: FactoryLog | None = None):
+    def __init__(self, llm: Any = None, agent_id: str | None = None, factory_log: FactoryLog | None = None,
+                 fallback_agent_id: str | None = None):
         self.llm = llm or evolus_client()
         self.agent_id = agent_id or os.environ["EVOLUS_AGENT_ID"]  # "<applicationId>:<agentId>"
+        self.fallback_agent_id = fallback_agent_id if fallback_agent_id is not None else \
+            os.environ.get("EVOLUS_FALLBACK_AGENT_ID") or None
         self.factory_log = factory_log or FactoryLog()
+        self.timeout = float(os.environ.get("EVOLUS_TIMEOUT_S", 240))
+
+    def _ask(self, agent_id: str, alert: Alert, replan: Replan | None) -> tuple[Any, list]:
+        """One Evolus run; the factory calls it made come back even when it fails (attached to the error)."""
+        self.factory_log.focus(alert.machine_id)
+        start = self.factory_log.last()
+        try:
+            response = self.llm.chat.completions.create(
+                model=agent_id, messages=[{"role": "user", "content": evolus_message(alert, replan)}],
+                timeout=self.timeout)
+        except Exception as exc:
+            exc.calls = self.factory_log.calls_after(start)  # type: ignore[attr-defined]
+            raise
+        return response, self.factory_log.calls_after(start)
 
     def run(self, alert: Alert, replan: Replan | None = None) -> tuple[dict[str, Any], list]:
+        note = None
         with RUN_LOCK:
-            self.factory_log.focus(alert.machine_id)
-            start = self.factory_log.last()
-            response = self.llm.chat.completions.create(
-                model=self.agent_id,
-                messages=[{"role": "user", "content": evolus_message(alert, replan)}],
-            )
-            calls = self.factory_log.calls_after(start)
+            try:
+                response, calls = self._ask(self.agent_id, alert, replan)
+            except Exception as exc:
+                drafted = [c for c in getattr(exc, "calls", []) if c.tool in DRAFTS
+                           and isinstance(c.result, dict) and "error" not in c.result]
+                if not (self.fallback_agent_id and unavailable(exc)) or drafted:
+                    if drafted:
+                        ids = ", ".join(str(c.result.get("po_id") or c.result.get("booking_id")) for c in drafted)
+                        raise EvolusError(f"The AI model stopped answering in the middle of the plan, after drafting "
+                                          f"{ids}. Reject those drafts and start again.") from exc
+                    raise
+                primary = os.environ.get("EVOLUS_AGENT_MODEL", "the main model")
+                backup = os.environ.get("EVOLUS_FALLBACK_MODEL", "the backup model")
+                note = f"Planned on the backup model ({backup}): {primary} was unavailable."
+                response, calls = self._ask(self.fallback_agent_id, alert, replan)
         plan = extract_json(strip_thinking(response.choices[0].message.content or ""))
+        if note:
+            plan["note"] = note
         return plan, calls

@@ -392,3 +392,59 @@ def test_a_replan_on_the_standing_order_needs_no_new_stock_check():
     assert not any("not found in the manual" in w for w in guard.check(result, make_alert()))
     result.trace = trace[1:]  # no order to lean on: still flagged
     assert any("not found in the manual" in w for w in guard.check(result, make_alert()))
+
+
+class Unavailable(Exception):
+    """What Evolus returns when the agent's model (on the Token Factory) has no free servers."""
+    status_code = 500
+
+
+def backup_llm(factory, fail_with, draft_first=False):
+    """Evolus-like: the "gemma" agent fails (optionally after drafting an order); any other agent plans."""
+    plan = {"status": "escalated", "diagnosis": "worn", "repair_steps": [], "part_number": PART,
+            "operator_summary": "x", "escalation_reason": "none free"}
+
+    class Fake(ScriptedLLM):
+        def _create(self, **kwargs):
+            self.requests.append(kwargs)
+            if kwargs["model"] == "gemma":
+                if draft_first:
+                    factory.client().draft_purchase_order(PART, 1, "M-01", "wear")
+                raise fail_with
+            factory.client().check_inventory(PART)
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(plan),
+                                                                                     tool_calls=None))])
+    return Fake([])
+
+
+def test_an_unavailable_model_falls_back_to_the_backup_agent(monkeypatch):
+    monkeypatch.setenv("EVOLUS_AGENT_MODEL", "Gemma 4")
+    monkeypatch.setenv("EVOLUS_FALLBACK_MODEL", "Qwen3.8-27B")
+    factory = FakeFactory()
+    llm = backup_llm(factory, Unavailable('Error from provider self-dploy: 503 {"code":"no_available_workers"}'))
+    agent = EvolusAgent(llm=llm, agent_id="gemma", fallback_agent_id="qwen", factory_log=factory_log(factory))
+    result = runner.run(make_alert(), agent=agent, backend="evolus")
+    assert [r["model"] for r in llm.requests] == ["gemma", "qwen"] and result.status == "escalated"
+    assert result.note == "Planned on the backup model (Qwen3.8-27B): Gemma 4 was unavailable."
+    assert [c.tool for c in result.trace] == ["check_inventory"]  # only the backup's run
+
+
+def test_no_backup_run_after_the_failed_run_drafted_something():
+    factory = FakeFactory()
+    llm = backup_llm(factory, Unavailable("no_available_workers"), draft_first=True)
+    agent = EvolusAgent(llm=llm, agent_id="gemma", fallback_agent_id="qwen", factory_log=factory_log(factory))
+    result = runner.run(make_alert(), agent=agent, backend="evolus")
+    assert [r["model"] for r in llm.requests] == ["gemma"]  # a second run would draft a second order
+    assert result.status == "failed" and "PO-0001" in result.escalation_reason
+
+
+def test_other_errors_and_no_backup_do_not_fall_back():
+    factory = FakeFactory()
+    bad = backup_llm(factory, ValueError("400: bad request"))
+    agent = EvolusAgent(llm=bad, agent_id="gemma", fallback_agent_id="qwen", factory_log=factory_log(factory))
+    assert runner.run(make_alert(), agent=agent, backend="evolus").status == "failed"
+    assert [r["model"] for r in bad.requests] == ["gemma"]
+    alone = backup_llm(factory, Unavailable("own_models.unreachable"))
+    agent = EvolusAgent(llm=alone, agent_id="gemma", fallback_agent_id="", factory_log=factory_log(factory))
+    result = runner.run(make_alert(), agent=agent, backend="evolus")
+    assert result.status == "failed" and result.escalation_reason == runner.MODEL_OFFLINE

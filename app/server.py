@@ -305,7 +305,7 @@ def start_demo(body: dict[str, Any] | None = Body(None)) -> JSONResponse:
     machines = [a["machine_id"] for a in alerts]
     return JSONResponse({"scenario": scenario, "machines": machines, "message": (
         f"Fresh demo: {DEMO_SCENARIOS[scenario]}. The factory was reset and {', '.join(machines)} sent an alert; "
-        "the agent is planning (usually 1–3 minutes" + (" per machine, one at a time" if len(machines) > 1 else "") + ").")})
+        "the agent is planning (up to 3 minutes" + (" per machine, one at a time" if len(machines) > 1 else "") + ").")})
 
 
 def clock() -> datetime:

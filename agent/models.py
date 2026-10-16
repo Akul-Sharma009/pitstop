@@ -73,3 +73,4 @@ class AgentResult(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     trace: list[ToolCall] = Field(default_factory=list)
     backend: str = ""
+    note: str | None = None  # e.g. "Planned on the backup model (…): … was unavailable."
