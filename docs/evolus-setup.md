@@ -39,7 +39,7 @@ curl -s $T/v1/models -H "Authorization: Bearer $VLLM_API_KEY"                   
 
 The address changes every time the tunnel restarts; update it in Evolus when it does.
 
-With vLLM on AMD, use the HTTPS host from `setup-guide.md` steps 3–5 instead (`docker compose --profile public up -d --build`).
+For a public host, set `PUBLIC_HOST` (e.g. `<server-ip>.sslip.io`) and run `docker compose --profile public up -d --build`: Caddy serves the screens, `/mcp` and `/v1` over HTTPS.
 
 ## 2. Workspace and model
 
