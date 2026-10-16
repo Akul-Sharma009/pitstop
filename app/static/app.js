@@ -428,6 +428,30 @@ async function demoEvent(path, body) {
   }
 }
 
+$('demo-start').addEventListener('click', async () => {
+  const scenario = $('demo-scenario').value;
+  $('demo-message').textContent = 'Resetting the factory…';
+  try {
+    const response = await fetch('/api/demo/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scenario }) });
+    const reply = await response.json();
+    if (!response.ok) throw new Error(reply.detail || `HTTP ${response.status}`);
+    // Follow the new alerts: the fleet table for the fleet, the approval page otherwise.
+    selectedMachine = null;
+    seen = null;
+    draftStates.clear();
+    clearPlan(null);
+    showAlert(null);
+    showFeedback(null);
+    machineHeader(null);
+    document.querySelector(`[data-page="${scenario === 'fleet' ? 'fleet' : 'approval'}"]`).click();
+    poll();
+    pollFleet();
+    $('demo-message').textContent = reply.message;
+  } catch (e) {
+    $('demo-message').textContent = `Not started: ${e.message}`;
+  }
+});
+
 $('delay-order').addEventListener('click', () => {
   if (!result || isDemo || !result.purchase_order_id) {
     $('demo-message').textContent = 'The plan on screen has no live purchase order to delay.';
