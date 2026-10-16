@@ -105,7 +105,7 @@ class Scenario:
 
 
 SCENARIOS = {s.name: s for s in [
-    # The three demo scenarios (CLAUDE.md, "Scope").
+    # The three demo scenarios.
     Scenario("out_of_stock", "Part out of stock: order it, book the engineer after delivery.",
              stock={"EM-1006": 5, "CP-220": 1}, slots={"E-01": [7, 30]}, order=True, booking=("E-01", 30)),
     Scenario("in_stock", "Part in stock: no order, book the earliest slot.",

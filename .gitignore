@@ -16,3 +16,7 @@ data/*.csv
 
 # Agent eval logs (local runs)
 eval-logs/
+
+# Local only: planning notes and Claude Code settings
+CLAUDE.md
+.claude/

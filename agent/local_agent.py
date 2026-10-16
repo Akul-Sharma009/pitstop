@@ -19,7 +19,7 @@ from mcp_server.factory import FactoryClient
 from mcp_server.tools import TOOL_SPECS, call_tool
 
 MAX_STEPS = 15
-# Chosen 12 Oct: 6/6 on the scenario eval, ~14x faster per call than thinking Qwen3 (see CLAUDE.md).
+# Chosen 12 Oct: 6/6 on the scenario eval, ~14x faster per call than thinking Qwen3.
 DEFAULT_MODEL = "Qwen/Qwen3-30B-A3B-Instruct-2507"
 TOOLS = [{"type": "function", "function": spec} for spec in [SEARCH_MANUAL_SPEC, *TOOL_SPECS, SUBMIT_PLAN_SPEC]]
 

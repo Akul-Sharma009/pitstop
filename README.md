@@ -35,7 +35,7 @@ The machine manual (`manual/`, 7 failure types, written by @pradeepshenram) and 
 
 ## 1. Serve the model on AMD Developer Cloud
 
-First time? Follow the step-by-step [`docs/setup-guide.md`](docs/setup-guide.md) (Mac → GPU instance → model → public MCP server → Evolus). The short version:
+The short version:
 
 On a GPU instance on AMD Developer Cloud (ROCm and Docker installed):
 
