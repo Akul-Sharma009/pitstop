@@ -368,3 +368,11 @@ def test_guard_flags_an_order_for_more_than_one_unit():
     script[3] = ("draft_purchase_order", {**script[3][1], "quantity": 50})
     result, _ = run_local(script)
     assert any("orders 50 units of EM-1004; a repair needs 1" in w for w in result.warnings)
+
+
+def test_null_written_as_text_is_nothing():
+    """Gemma 4 and Qwen3.8 sometimes write "null" or "None" as text for an order or booking they didn't make."""
+    from agent.reconcile import reconcile
+
+    plan, warnings = reconcile({"purchase_order_id": "null", "booking_id": "None", "escalation_reason": "N/A"}, [])
+    assert warnings == [] and plan["purchase_order_id"] is None and plan["booking_id"] is None

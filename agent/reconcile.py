@@ -28,8 +28,13 @@ def _set(plan: dict[str, Any], key: str, value: Any, warnings: list[str], label:
     plan[key] = value
 
 
+# What some models write for "nothing" in a field that should be null (e.g. Gemma 4: "null", Qwen3.8: "None").
+EMPTY = {"null", "none", "n/a", "na", "-", ""}
+
+
 def reconcile(plan: dict[str, Any], trace: list[ToolCall]) -> tuple[dict[str, Any], list[str]]:
-    plan, warnings = dict(plan), []
+    plan = {k: None if isinstance(v, str) and v.strip().lower() in EMPTY else v for k, v in plan.items()}
+    warnings: list[str] = []
 
     order = _last(trace, "draft_purchase_order")
     if order:
