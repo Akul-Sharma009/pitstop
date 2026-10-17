@@ -43,7 +43,9 @@ function setStatus(status) {
 // After a rejection with a reason, the plan on screen is the agent's new plan: say why there is one.
 function showFeedback(feedback) {
   $('feedback').hidden = !feedback;
-  $('feedback').textContent = feedback ? `New plan after the manager's feedback: "${feedback}"` : '';
+  // A supplier delay or a worse reading replans too: only the manager's own words are called feedback.
+  const event = /^(The supplier delayed|A new sensor reading)/.test(feedback || '');
+  $('feedback').textContent = !feedback ? '' : event ? `New plan: ${feedback}` : `New plan after the manager's feedback: "${feedback}"`;
 }
 
 function showAlert(alert) {
@@ -551,6 +553,10 @@ $('sensor-worse').addEventListener('click', () => {
 
 pollStatus();
 setInterval(pollStatus, 10000);
+// A page can be linked directly: …/#operator or …/#fleet (default: the approval page).
+const linked = document.querySelector(`[data-page="${location.hash.slice(1)}"]`);
+if (linked) linked.click();
+
 poll();
 setInterval(poll, POLL_MS);
 pollFleet();
